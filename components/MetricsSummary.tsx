@@ -19,6 +19,24 @@ interface MetricsSummaryProps {
   compras: Compra[];
 }
 
+function formatTick(tick: number): string {
+  if (tick === 0) return '0 Bs';
+  if (tick >= 1000) {
+    const k = tick / 1000;
+    return `${k % 1 === 0 ? k : k.toFixed(1)}k Bs`;
+  }
+  return `${tick} Bs`;
+}
+
+function formatBarAmount(amount: number): string {
+  if (amount <= 0) return '';
+  if (amount >= 1000) {
+    const k = amount / 1000;
+    return `${k % 1 === 0 ? k : k.toFixed(1)}k`;
+  }
+  return `${amount}`;
+}
+
 export function MetricsSummary({ pedidos, compras }: MetricsSummaryProps) {
   const metrics = useMemo(() => {
     const today = new Date();
@@ -57,7 +75,7 @@ export function MetricsSummary({ pedidos, compras }: MetricsSummaryProps) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${d.getMonth()}`;
       monthlyMap[key] = {
-        label: `${monthNames[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`,
+        label: `${monthNames[d.getMonth()]} ${d.getFullYear()}`,
         ventas: 0,
         anticipos: 0,
         count: 0,
@@ -76,7 +94,17 @@ export function MetricsSummary({ pedidos, compras }: MetricsSummaryProps) {
     });
 
     const chartData = Object.values(monthlyMap);
-    const maxVal = Math.max(...chartData.map((m) => Math.max(m.ventas, m.anticipos)), 1000);
+    const rawMax = Math.max(...chartData.map((m) => Math.max(m.ventas, m.anticipos)), 1000);
+
+    let step = 250;
+    if (rawMax <= 1000) step = 250;
+    else if (rawMax <= 2000) step = 500;
+    else if (rawMax <= 4000) step = 1000;
+    else if (rawMax <= 8000) step = 2000;
+    else step = Math.ceil(rawMax / 4 / 1000) * 1000;
+
+    const yAxisMax = step * 4;
+    const yTicks = [yAxisMax, step * 3, step * 2, step, 0];
 
     return {
       anticiposCobrados,
@@ -87,7 +115,8 @@ export function MetricsSummary({ pedidos, compras }: MetricsSummaryProps) {
       ventasTotales,
       gananciaNeta,
       chartData,
-      maxVal,
+      maxVal: yAxisMax,
+      yTicks,
     };
   }, [pedidos, compras]);
 
@@ -181,71 +210,135 @@ export function MetricsSummary({ pedidos, compras }: MetricsSummaryProps) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 sm:pb-5 border-b border-[#FCE7F3]">
           <div>
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-[#F43F5E] flex-shrink-0" />
-              <h3 className="text-xs sm:text-base font-black text-[#1F2937] leading-tight">
+              <Calendar className="w-4 h-4 sm:w-5 sm:h-5 text-rose-500 flex-shrink-0" />
+              <h3 className="text-xs sm:text-base font-black text-slate-800 leading-tight">
                 Flujo Mensual de Pedidos y Anticipos (Bs)
               </h3>
             </div>
-            <p className="text-[10px] sm:text-xs text-[#6B7280] mt-0.5">
+            <p className="text-[10px] sm:text-xs text-slate-500 mt-0.5">
               Comparativa de volumen vendido y anticipos recibidos (últimos 6 meses)
             </p>
           </div>
 
           <div className="flex items-center gap-3 sm:gap-4 text-[10px] sm:text-xs">
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-xs bg-[#1F2937]" />
-              <span className="text-[#6B7280] font-medium">Pedidos</span>
+              <div className="w-3 h-3 rounded-xs sm:rounded-sm bg-gradient-to-t from-rose-500 to-rose-400 shadow-xs" />
+              <span className="text-slate-600 font-semibold">Total Pedidos</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-xs bg-[#F43F5E]" />
-              <span className="text-[#6B7280] font-medium">Anticipos</span>
+              <div className="w-3 h-3 rounded-xs sm:rounded-sm bg-gradient-to-t from-rose-300 to-pink-200 border border-rose-200 shadow-xs" />
+              <span className="text-slate-600 font-semibold">Anticipos</span>
             </div>
           </div>
         </div>
 
-        {/* Visual Bar Chart */}
-        <div className="mt-3 sm:mt-6 w-full max-w-full overflow-x-hidden">
-          <div className="h-36 sm:h-52 flex items-end justify-between gap-1.5 sm:gap-6 pt-3 sm:pt-6">
-            {metrics.chartData.map((item, idx) => {
-              const ventasHeight = Math.max(Math.round((item.ventas / metrics.maxVal) * 100), item.ventas > 0 ? 6 : 2);
-              const anticiposHeight = Math.max(Math.round((item.anticipos / metrics.maxVal) * 100), item.anticipos > 0 ? 4 : 2);
-
-              return (
-                <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group min-w-0">
-                  {/* Tooltip on hover */}
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 mb-1 pointer-events-none text-center hidden sm:block">
-                    <span className="text-[10px] font-semibold bg-slate-900 text-white px-2 py-1 rounded-md shadow-md whitespace-nowrap block">
-                      Ventas: {formatCurrency(item.ventas)}
+        {/* Visual Bar Chart with Guidelines & Y-Axis */}
+        <div className="mt-4 sm:mt-6 w-full max-w-full overflow-x-hidden">
+          <div className="relative h-64 sm:h-72 min-h-[260px] sm:min-h-[280px] flex flex-col">
+            {/* Plotting Area with Guidelines + Y Axis + Bars */}
+            <div className="relative flex-1 w-full">
+              {/* Horizontal Reference Lines & Y-Axis Ticks */}
+              {metrics.yTicks.map((tick, idx) => {
+                const topPercent = (idx / (metrics.yTicks.length - 1)) * 100;
+                return (
+                  <div
+                    key={idx}
+                    className="absolute inset-x-0 flex items-center pointer-events-none"
+                    style={{ top: `${topPercent}%` }}
+                  >
+                    <span className="w-11 sm:w-16 flex-shrink-0 text-right pr-2 sm:pr-3 text-[9px] sm:text-xs font-semibold text-slate-400 select-none tabular-nums truncate -translate-y-1/2">
+                      {formatTick(tick)}
                     </span>
-                    <span className="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-md shadow-xs whitespace-nowrap block mt-0.5">
-                      Anticipos: {formatCurrency(item.anticipos)}
-                    </span>
-                  </div>
-
-                  {/* Bars side by side */}
-                  <div className="w-full flex items-end justify-center gap-0.5 sm:gap-2 h-full max-w-[36px] sm:max-w-[50px]">
                     <div
-                      style={{ height: `${ventasHeight}%` }}
-                      className="w-1/2 bg-slate-800 rounded-t-sm sm:rounded-t-md hover:bg-slate-700 transition-all duration-300 relative"
-                      title={`Total: ${formatCurrency(item.ventas)}`}
-                    />
-                    <div
-                      style={{ height: `${anticiposHeight}%` }}
-                      className="w-1/2 bg-rose-500 rounded-t-sm sm:rounded-t-md hover:bg-rose-600 transition-all duration-300 relative"
-                      title={`Anticipos: ${formatCurrency(item.anticipos)}`}
+                      className={`flex-1 border-b ${
+                        idx === metrics.yTicks.length - 1 ? 'border-rose-200/90' : 'border-slate-100'
+                      }`}
                     />
                   </div>
+                );
+              })}
 
-                  {/* Month Label */}
-                  <span className="text-[9px] sm:text-[11px] font-medium text-slate-500 mt-1.5 sm:mt-2 text-center truncate w-full">
+              {/* Bars Columns Area */}
+              <div className="ml-11 sm:ml-16 h-full flex items-end justify-between gap-1.5 sm:gap-4 relative z-10 px-1 sm:px-2">
+                {metrics.chartData.map((item, idx) => {
+                  const maxBarPercent = 82;
+                  const ventasHeight =
+                    item.ventas > 0
+                      ? Math.max(Math.round((item.ventas / metrics.maxVal) * maxBarPercent), 6)
+                      : 2;
+                  const anticiposHeight =
+                    item.anticipos > 0
+                      ? Math.max(Math.round((item.anticipos / metrics.maxVal) * maxBarPercent), 4)
+                      : 2;
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex-1 h-full flex flex-col items-center justify-end group/col relative min-w-0"
+                    >
+                      {/* Floating Tooltip on Hover / Focus */}
+                      <div className="opacity-0 group-hover/col:opacity-100 transition-opacity duration-200 pointer-events-none text-center absolute -top-3 transform -translate-y-full z-30 bg-slate-900/95 text-white px-2.5 py-1.5 rounded-xl shadow-xl text-xs backdrop-blur-xs whitespace-nowrap hidden sm:block">
+                        <p className="font-bold text-rose-300">{item.label}</p>
+                        <p className="text-[11px] text-slate-200 mt-0.5">
+                          Total Pedidos: <span className="font-semibold text-white">{formatCurrency(item.ventas)}</span>
+                        </p>
+                        <p className="text-[11px] text-rose-200">
+                          Anticipos: <span className="font-semibold text-white">{formatCurrency(item.anticipos)}</span>
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {item.count} {item.count === 1 ? 'pedido' : 'pedidos'}
+                        </p>
+                      </div>
+
+                      {/* Bars Side by Side with Numbers Above */}
+                      <div className="w-full flex items-end justify-center gap-1 sm:gap-2 h-full max-w-[40px] sm:max-w-[56px] pb-0.5">
+                        {/* Pedidos Bar (Total) */}
+                        <div className="w-1/2 h-full flex flex-col justify-end items-center relative">
+                          {item.ventas > 0 && (
+                            <span className="text-[8px] sm:text-[10px] font-bold text-rose-600 mb-1 select-none leading-none truncate max-w-full text-center">
+                              <span className="hidden sm:inline">Bs </span>{formatBarAmount(item.ventas)}
+                            </span>
+                          )}
+                          <div
+                            style={{ height: `${ventasHeight}%` }}
+                            className="w-full bg-gradient-to-t from-rose-500 to-rose-400 hover:from-rose-600 hover:to-rose-500 rounded-t-lg shadow-xs transition-all duration-300 cursor-pointer"
+                            title={`${item.label} - Total Pedidos: ${formatCurrency(item.ventas)}`}
+                          />
+                        </div>
+
+                        {/* Anticipos Bar (Recaudado) */}
+                        <div className="w-1/2 h-full flex flex-col justify-end items-center relative">
+                          {item.anticipos > 0 && (
+                            <span className="text-[8px] sm:text-[10px] font-bold text-pink-600 mb-1 select-none leading-none truncate max-w-full text-center">
+                              <span className="hidden sm:inline">Bs </span>{formatBarAmount(item.anticipos)}
+                            </span>
+                          )}
+                          <div
+                            style={{ height: `${anticiposHeight}%` }}
+                            className="w-full bg-gradient-to-t from-rose-300 to-pink-200 hover:from-rose-400 hover:to-pink-300 border border-rose-200/90 rounded-t-lg shadow-xs transition-all duration-300 cursor-pointer"
+                            title={`${item.label} - Anticipos Recaudados: ${formatCurrency(item.anticipos)}`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* X-Axis Month & Orders Row (2 Distinct Lines) */}
+            <div className="ml-11 sm:ml-16 flex items-start justify-between gap-1.5 sm:gap-4 px-1 sm:px-2 pt-2 h-14 sm:h-16 flex-shrink-0">
+              {metrics.chartData.map((item, idx) => (
+                <div key={idx} className="flex-1 flex flex-col items-center justify-start text-center min-w-0">
+                  <span className="text-[10px] sm:text-xs font-semibold text-slate-700 tracking-tight truncate w-full">
                     {item.label}
                   </span>
-                  <span className="text-[8.5px] sm:text-[10px] text-slate-400 font-mono">
-                    {item.count} enc.
+                  <span className="text-[9px] sm:text-[11px] font-medium text-slate-400 mt-0.5 truncate w-full">
+                    {item.count} {item.count === 1 ? 'pedido' : 'pedidos'}
                   </span>
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </div>
       </div>
