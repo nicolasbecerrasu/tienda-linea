@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { Pedido, PedidoEstado, Prenda } from '@/types/database';
-import { ESTADOS_PEDIDO_CONFIG, formatCurrency } from '@/lib/utils';
+import { ESTADOS_PEDIDO_CONFIG, formatCurrency, generateInternalSKU } from '@/lib/utils';
 import {
   X,
   Sparkles,
@@ -16,6 +16,7 @@ import {
   CheckCircle,
   AlertCircle,
   ShoppingBag,
+  RefreshCw,
 } from 'lucide-react';
 
 interface NuevoPedidoModalProps {
@@ -58,6 +59,35 @@ export function NuevoPedidoModal({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Generar automáticamente el código interno al abrir el modal o si está vacío
+  useEffect(() => {
+    if (isOpen && !nuevaPrendaCodigo) {
+      setNuevaPrendaCodigo(generateInternalSKU());
+    }
+  }, [isOpen, nuevaPrendaCodigo]);
+
+  const resetForm = () => {
+    setClienteNombre('');
+    setClienteTelefono('');
+    setSelectedPrendaId('');
+    setNuevaPrendaNombre('');
+    setNuevaPrendaCodigo(generateInternalSKU());
+    setNuevaPrendaTalla('');
+    setSelectedFile(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
+    setPrecioTotal('');
+    setAnticipoPagado('');
+    setEstado('APARTADO');
+    setNotas('');
+    setError(null);
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onClose();
+  };
 
   if (!isOpen) return null;
 
@@ -143,7 +173,7 @@ export function NuevoPedidoModal({
         }
 
         const nombrePrenda = nuevaPrendaNombre.trim() || `Prenda de ${clienteNombre.trim()}`;
-        const codigoPrenda = nuevaPrendaCodigo.trim() || `SH-${Date.now().toString().slice(-6)}`;
+        const codigoPrenda = nuevaPrendaCodigo.trim() || generateInternalSKU();
         const tallaPrenda = nuevaPrendaTalla.trim() || 'Única';
 
         const nuevaPrendaPayload = {
@@ -222,7 +252,7 @@ export function NuevoPedidoModal({
       }
 
       onPedidoCreated(createdPedido);
-      onClose();
+      handleClose();
     } catch (err: any) {
       console.error('Error al registrar pedido:', err);
       setError(err?.message || 'Error al procesar el pedido.');
@@ -246,7 +276,7 @@ export function NuevoPedidoModal({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-white transition-colors"
           >
             <X className="w-5 h-5" />
@@ -384,24 +414,44 @@ export function NuevoPedidoModal({
                     type="text"
                     placeholder="Ej. Vestido rojo ajustado corte sirena"
                     value={nuevaPrendaNombre}
-                    onChange={(e) => setNuevaPrendaNombre(e.target.value)}
+                    onChange={(e) => {
+                      setNuevaPrendaNombre(e.target.value);
+                      if (!nuevaPrendaCodigo) {
+                        setNuevaPrendaCodigo(generateInternalSKU());
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs text-neutral-900 focus:border-neutral-900 outline-none bg-white"
                   />
                 </div>
 
                 {/* Código Shein & Talla */}
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
                   <div>
                     <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
                       Código / Referencia (SKU)
                     </label>
-                    <input
-                      type="text"
-                      placeholder="Ej. sw210908819238"
-                      value={nuevaPrendaCodigo}
-                      onChange={(e) => setNuevaPrendaCodigo(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-xs font-mono text-neutral-900 focus:border-neutral-900 outline-none bg-white"
-                    />
+                    <div className="relative flex items-center">
+                      <Tag className="w-3.5 h-3.5 absolute left-3 text-rose-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={nuevaPrendaCodigo}
+                        placeholder="Generando código..."
+                        className="w-full pl-8 pr-9 py-2 rounded-xl border border-slate-200 bg-slate-50/80 text-xs font-mono font-bold text-slate-800 cursor-not-allowed select-all focus:outline-none"
+                        title="Código generado automáticamente para control interno y búsqueda rápida"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setNuevaPrendaCodigo(generateInternalSKU())}
+                        className="absolute right-1.5 p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="Generar otro código"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <p className="text-[9.5px] text-slate-400 mt-1 leading-tight">
+                      Código generado automáticamente para control interno y búsqueda rápida
+                    </p>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-neutral-600 mb-1">
@@ -555,7 +605,7 @@ export function NuevoPedidoModal({
           <div className="pt-2 flex items-center justify-end gap-3 border-t border-[#FCE7F3]">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 rounded-2xl border border-[#FCE7F3] text-[#6B7280] text-xs font-semibold hover:bg-[#FFF1F2] hover:text-[#1F2937] transition-colors"
             >
               Cancelar

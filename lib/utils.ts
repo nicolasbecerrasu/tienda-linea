@@ -15,6 +15,12 @@ export function formatCurrency(amount: number | null | undefined): string {
   return `${formatted} Bs`;
 }
 
+export function generateInternalSKU(): string {
+  const yearSuffix = new Date().getFullYear().toString().slice(-2);
+  const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+  return `SO-${yearSuffix}${randomSuffix}`;
+}
+
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return '-';
   try {
