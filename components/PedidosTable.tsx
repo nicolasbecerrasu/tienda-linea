@@ -2,10 +2,11 @@
 
 import React, { useState, useMemo } from 'react';
 import Image from 'next/image';
-import { Pedido, PedidoEstado } from '@/types/database';
+import { Pedido, PedidoEstado, AbonoPedido } from '@/types/database';
 import {
   formatCurrency,
   formatDate,
+  formatDateOnly,
   ESTADOS_PEDIDO_CONFIG,
   exportPedidosToCSV,
 } from '@/lib/utils';
@@ -23,6 +24,14 @@ import {
   ShoppingBag,
   CreditCard,
   X,
+  PlusCircle,
+  FileText,
+  DollarSign,
+  Calendar,
+  Tag,
+  Wallet,
+  ArrowRight,
+  User,
 } from 'lucide-react';
 
 interface PedidosTableProps {
@@ -30,6 +39,10 @@ interface PedidosTableProps {
   onUpdateEstado: (pedidoId: string, nuevoEstado: PedidoEstado) => Promise<void>;
   onLiquidar: (pedidoId: string) => Promise<void>;
   onNuevoPedidoClick?: () => void;
+  onRegistrarAbono?: (
+    pedidoId: string,
+    abonoData: { monto: number; metodo: string; fecha_pago: string; nota?: string }
+  ) => Promise<void>;
 }
 
 export function PedidosTable({
@@ -37,12 +50,30 @@ export function PedidosTable({
   onUpdateEstado,
   onLiquidar,
   onNuevoPedidoClick,
+  onRegistrarAbono,
 }: PedidosTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedEstado, setSelectedEstado] = useState<string>('TODOS');
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
   const [liquidatingId, setLiquidatingId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Modals state
+  const [selectedPedidoForFicha, setSelectedPedidoForFicha] = useState<Pedido | null>(null);
+  const [selectedPedidoForAbono, setSelectedPedidoForAbono] = useState<Pedido | null>(null);
+
+  // Abono Form State
+  const [abonoMonto, setAbonoMonto] = useState('');
+  const [abonoMetodo, setAbonoMetodo] = useState('Efectivo');
+  const [abonoFecha, setAbonoFecha] = useState(() => new Date().toISOString().split('T')[0]);
+  const [abonoNota, setAbonoNota] = useState('');
+  const [savingAbono, setSavingAbono] = useState(false);
+
+  // Keep selectedPedidoForFicha synced with latest pedidos state
+  const activeFichaPedido = useMemo(() => {
+    if (!selectedPedidoForFicha) return null;
+    return pedidos.find((p) => p.id === selectedPedidoForFicha.id) || selectedPedidoForFicha;
+  }, [pedidos, selectedPedidoForFicha]);
 
   const copyCode = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
@@ -114,6 +145,9 @@ export function PedidosTable({
         text: `Pedido de ${pedido.cliente_nombre} liquidado exitosamente. La foto fue purgada de Supabase Storage.`,
       });
       setTimeout(() => setActionMessage(null), 4000);
+      if (selectedPedidoForFicha?.id === pedido.id) {
+        setSelectedPedidoForFicha(null);
+      }
     } catch (err: any) {
       setActionMessage({
         type: 'error',
@@ -121,6 +155,57 @@ export function PedidosTable({
       });
     } finally {
       setLiquidatingId(null);
+    }
+  };
+
+  // Open Abono Modal for a specific order
+  const handleOpenAbonoModal = (pedido: Pedido) => {
+    setSelectedPedidoForAbono(pedido);
+    setAbonoMonto('');
+    setAbonoMetodo('Efectivo');
+    setAbonoFecha(new Date().toISOString().split('T')[0]);
+    setAbonoNota('');
+  };
+
+  // Submit New Abono
+  const handleGuardarAbono = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPedidoForAbono) return;
+
+    const montoNum = parseFloat(abonoMonto);
+    if (isNaN(montoNum) || montoNum <= 0) {
+      alert('Ingresa un monto de abono válido mayor a 0 Bs.');
+      return;
+    }
+
+    setSavingAbono(true);
+    try {
+      if (onRegistrarAbono) {
+        await onRegistrarAbono(selectedPedidoForAbono.id, {
+          monto: montoNum,
+          metodo: abonoMetodo,
+          fecha_pago: new Date(abonoFecha).toISOString(),
+          nota: abonoNota.trim() || undefined,
+        });
+      }
+
+      const nuevoSaldo = Math.max(Number(selectedPedidoForAbono.saldo_pendiente) - montoNum, 0);
+
+      setActionMessage({
+        type: 'success',
+        text:
+          nuevoSaldo === 0
+            ? `¡Abono registrado! El pedido de ${selectedPedidoForAbono.cliente_nombre} ha quedado 100% pagado y se marcó como Liquidado.`
+            : `Abono de ${formatCurrency(montoNum)} registrado para ${selectedPedidoForAbono.cliente_nombre}. Saldo restante: ${formatCurrency(nuevoSaldo)}.`,
+      });
+      setTimeout(() => setActionMessage(null), 5000);
+
+      setSelectedPedidoForAbono(null);
+    } catch (err: any) {
+      console.error('Error al registrar abono:', err);
+      alert(err?.message || 'Error al registrar el abono.');
+    } finally {
+      setSavingAbono(false);
     }
   };
 
@@ -169,7 +254,7 @@ export function PedidosTable({
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Control de clientas, anticipos cobrados, saldos pendientes y purga automática al liquidar.
+            Gestión simplificada de clientas, historial de abonos parciales y cobro contra entrega.
           </p>
         </div>
 
@@ -232,7 +317,7 @@ export function PedidosTable({
 
       {/* Main Table Container */}
       <div className="bg-white rounded-2xl border border-rose-200/70 shadow-md overflow-hidden">
-        {/* Search bar & Status Filter Pills */}
+        {/* Search bar & Status Filter Tabs */}
         <div className="p-4 sm:p-5 border-b border-rose-100 space-y-3.5">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3.5 top-3 text-rose-400 pointer-events-none" />
@@ -289,81 +374,60 @@ export function PedidosTable({
           </div>
         </div>
 
-        {/* DESKTOP TABLE VIEW */}
+        {/* 1. DESKTOP TABLE VIEW: EXACT 7 COLUMNS */}
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left text-xs">
-            <thead className="bg-rose-50/40 border-b border-rose-100 text-slate-600 font-medium text-xs uppercase tracking-wider">
+            <thead className="bg-rose-50/40 border-b border-rose-100 text-slate-600 font-semibold text-xs uppercase tracking-wider">
               <tr>
-                <th className="py-2.5 px-4">Clienta</th>
-                <th className="py-2.5 px-3">WhatsApp</th>
-                <th className="py-2.5 px-3">Prenda Encargada</th>
-                <th className="py-2.5 px-3">Talla</th>
-                <th className="py-2.5 px-3">Código / Modelo</th>
-                <th className="py-2.5 px-3 text-right">Precio Total</th>
-                <th className="py-2.5 px-3 text-right">Anticipo</th>
-                <th className="py-2.5 px-3 text-right">Saldo Deuda</th>
-                <th className="py-2.5 px-3">Fecha</th>
-                <th className="py-2.5 px-3">Estado</th>
-                <th className="py-2.5 px-4 text-center">Acciones</th>
+                <th className="py-3 px-4">Clienta</th>
+                <th className="py-3 px-3">Prenda</th>
+                <th className="py-3 px-3 text-right">Precio Total</th>
+                <th className="py-3 px-3 text-right">Total Pagado</th>
+                <th className="py-3 px-3 text-right">Saldo Deuda</th>
+                <th className="py-3 px-3">Estado</th>
+                <th className="py-3 px-4 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-rose-100/60 bg-white">
               {filteredPedidos.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="py-10 text-center text-slate-400">
+                  <td colSpan={7} className="py-10 text-center text-slate-400">
                     <ShoppingBag className="w-8 h-8 text-rose-300 mx-auto mb-2" />
                     <p className="font-semibold text-slate-600">No se encontraron pedidos con estos filtros.</p>
                   </td>
                 </tr>
               ) : (
                 filteredPedidos.map((pedido) => {
-                  const cleanPhone = (pedido.cliente_telefono || '').replace(/[^0-9]/g, '');
-                  const isLiquidating = liquidatingId === pedido.id;
-                  const isLiquidado = pedido.estado === 'LIQUIDADO';
+                  const saldoNum = Number(pedido.saldo_pendiente) || 0;
+                  const debe = saldoNum > 0;
 
                   return (
                     <tr key={pedido.id} className="hover:bg-rose-50/20 transition-colors group">
-                      {/* Clienta */}
-                      <td className="py-2.5 px-4 font-semibold text-slate-900 whitespace-nowrap">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-7 h-7 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                      {/* 1. Clienta (Avatar + Nombre, clic abre ficha) */}
+                      <td className="py-3 px-4 font-semibold text-slate-900 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPedidoForFicha(pedido)}
+                          className="flex items-center gap-2.5 text-left group/name hover:opacity-85 transition-opacity"
+                        >
+                          <div className="w-8 h-8 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-black text-xs flex-shrink-0 group-hover/name:bg-rose-200 transition-colors">
                             {pedido.cliente_nombre ? pedido.cliente_nombre[0].toUpperCase() : 'C'}
                           </div>
                           <div>
-                            <div className="font-bold text-slate-900">{pedido.cliente_nombre}</div>
-                            {pedido.notas && (
-                              <span className="text-[10px] text-slate-400 font-normal line-clamp-1 max-w-[140px]" title={pedido.notas}>
-                                {pedido.notas}
-                              </span>
-                            )}
+                            <div className="font-bold text-slate-900 group-hover/name:text-rose-600 transition-colors underline-offset-2 group-hover/name:underline">
+                              {pedido.cliente_nombre}
+                            </div>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              Ver detalles y ficha
+                            </span>
                           </div>
-                        </div>
+                        </button>
                       </td>
 
-                      {/* Celular + WhatsApp */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        {cleanPhone ? (
-                          <a
-                            href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-                              `¡Hola ${pedido.cliente_nombre}! Te contactamos de SO Shopping Online sobre tu encargo (${pedido.prenda?.nombre || ''}). Saldo restante por pagar: ${formatCurrency(pedido.saldo_pendiente)}.`
-                            )}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-[#065F46] bg-[#D1FAE5]/80 hover:bg-[#A7F3D0] border border-[#A7F3D0]/70 transition-colors"
-                            title="Abrir chat de WhatsApp"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5 fill-[#065F46]" />
-                            <span className="font-mono">{cleanPhone}</span>
-                          </a>
-                        ) : (
-                          <span className="text-slate-400 font-mono text-xs">{pedido.cliente_telefono || '-'}</span>
-                        )}
-                      </td>
-
-                      {/* Prenda + thumbnail */}
-                      <td className="py-2.5 px-3 max-w-[180px]">
+                      {/* 2. Prenda (Miniatura + Nombre) */}
+                      <td className="py-3 px-3 max-w-[200px]">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-9 rounded-lg overflow-hidden bg-rose-50 flex-shrink-0 relative border border-rose-100">
+                          <div className="w-8 h-10 rounded-lg overflow-hidden bg-rose-50 flex-shrink-0 relative border border-rose-100">
                             {pedido.prenda?.url_foto ? (
                               <Image
                                 src={pedido.prenda.url_foto}
@@ -384,68 +448,35 @@ export function PedidosTable({
                         </div>
                       </td>
 
-                      {/* Talla */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-100">
-                          {pedido.prenda?.talla || '-'}
-                        </span>
-                      </td>
-
-                      {/* Código / Modelo */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        {pedido.prenda?.codigo_shein ? (
-                          <button
-                            type="button"
-                            onClick={() => copyCode(pedido.prenda!.codigo_shein, pedido.id)}
-                            className="inline-flex items-center gap-1 font-mono text-[11px] text-slate-600 hover:text-rose-700 bg-slate-50 hover:bg-rose-50 px-2 py-0.5 rounded-lg border border-slate-200 transition-colors"
-                            title="Click para copiar código"
-                          >
-                            <span>{pedido.prenda.codigo_shein}</span>
-                            {copiedCodeId === pedido.id ? (
-                              <Check className="w-3 h-3 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3 h-3 text-slate-400" />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-
-                      {/* Precio Total */}
-                      <td className="py-2.5 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
+                      {/* 3. Precio Total */}
+                      <td className="py-3 px-3 text-right font-bold text-slate-900 whitespace-nowrap">
                         {formatCurrency(pedido.precio_total)}
                       </td>
 
-                      {/* Anticipo Pagado */}
-                      <td className="py-2.5 px-3 text-right font-bold text-rose-700 whitespace-nowrap">
+                      {/* 4. Total Pagado (Abonos acumulados) */}
+                      <td className="py-3 px-3 text-right font-bold text-rose-700 whitespace-nowrap">
                         {formatCurrency(pedido.anticipo_pagado)}
                       </td>
 
-                      {/* Saldo Pendiente */}
-                      <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap">
+                      {/* 5. Saldo Deuda (Etiqueta amarilla si debe, verde si 0) */}
+                      <td className="py-3 px-3 text-right whitespace-nowrap">
                         <span
-                          className={
-                            pedido.saldo_pendiente > 0
-                              ? 'text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full text-xs font-semibold'
-                              : 'text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full text-xs font-semibold'
-                          }
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                            debe
+                              ? 'text-amber-800 bg-amber-50 border-amber-200'
+                              : 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                          }`}
                         >
-                          {formatCurrency(pedido.saldo_pendiente)}
+                          {debe ? formatCurrency(saldoNum) : '0.00 Bs'}
                         </span>
                       </td>
 
-                      {/* Fecha Pedido */}
-                      <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap text-[11px]">
-                        {formatDate(pedido.fecha_pedido)}
-                      </td>
-
-                      {/* Estado Dropdown */}
-                      <td className="py-2.5 px-3 whitespace-nowrap">
+                      {/* 6. Estado (Píldora con selector) */}
+                      <td className="py-3 px-3 whitespace-nowrap">
                         <select
                           value={pedido.estado}
                           onChange={(e) => onUpdateEstado(pedido.id, e.target.value as PedidoEstado)}
-                          className={`text-xs font-semibold rounded-full px-2.5 py-0.5 border transition-colors outline-none cursor-pointer whitespace-nowrap ${
+                          className={`text-xs font-semibold rounded-full px-2.5 py-1 border transition-colors outline-none cursor-pointer whitespace-nowrap shadow-2xs ${
                             ESTADOS_PEDIDO_CONFIG[pedido.estado]?.badgeClass || 'bg-slate-100'
                           }`}
                         >
@@ -457,29 +488,29 @@ export function PedidosTable({
                         </select>
                       </td>
 
-                      {/* Acciones */}
-                      <td className="py-2.5 px-4 text-center whitespace-nowrap">
-                        {!isLiquidado ? (
+                      {/* 7. Acciones: Botón "+ Abono" y "Ver Ficha" */}
+                      <td className="py-3 px-4 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-2">
                           <button
                             type="button"
-                            onClick={() => handleLiquidarClick(pedido)}
-                            disabled={isLiquidating}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#4E9F76] hover:bg-[#3D8361] text-white font-semibold text-xs shadow-2xs hover:shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                            title="Cobrar y marcar como liquidado (purgará foto de almacenamiento)"
+                            onClick={() => handleOpenAbonoModal(pedido)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 shadow-2xs transition-all active:scale-95"
+                            title="Registrar nuevo abono parcial para este pedido"
                           >
-                            {isLiquidating ? (
-                              <span className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                            ) : (
-                              <CheckCircle className="w-3.5 h-3.5 text-white" />
-                            )}
-                            <span>Cobrar & Liquidar</span>
+                            <PlusCircle className="w-3.5 h-3.5 text-rose-500" />
+                            <span>+ Abono</span>
                           </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-purple-700 bg-[#F3E8FF] border border-[#E9D5FF] px-2 py-0.5 rounded-full">
-                            <Check className="w-3 h-3 text-purple-600" />
-                            Liquidado
-                          </span>
-                        )}
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPedidoForFicha(pedido)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs transition-all active:scale-95"
+                            title="Ver ficha completa de la clienta, SKU y WhatsApp"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Ver Ficha</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -489,56 +520,43 @@ export function PedidosTable({
           </table>
         </div>
 
-        {/* MOBILE / TABLET CARD VIEW */}
+        {/* 2. MOBILE CARD VIEW: COMPACTA Y DIRECTA */}
         <div className="lg:hidden divide-y divide-rose-100">
           {filteredPedidos.length === 0 ? (
             <div className="p-8 text-center text-slate-400 text-sm">
-              No se encontraron pedidos.
+              No se encontraron pedidos con estos filtros.
             </div>
           ) : (
             filteredPedidos.map((pedido) => {
-              const cleanPhone = (pedido.cliente_telefono || '').replace(/[^0-9]/g, '');
-              const isLiquidating = liquidatingId === pedido.id;
-              const isLiquidado = pedido.estado === 'LIQUIDADO';
+              const saldoNum = Number(pedido.saldo_pendiente) || 0;
+              const debe = saldoNum > 0;
 
               return (
                 <div key={pedido.id} className="p-4 space-y-3">
-                  {/* Header: Clienta, Estado y WhatsApp */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  {/* Fila 1: Clienta & Estado */}
+                  <div className="flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPedidoForFicha(pedido)}
+                      className="flex items-center gap-2.5 text-left min-w-0"
+                    >
+                      <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center font-black text-xs flex-shrink-0">
                         {pedido.cliente_nombre ? pedido.cliente_nombre[0].toUpperCase() : 'C'}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-slate-900 text-sm leading-tight">
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-slate-900 text-sm truncate">
                           {pedido.cliente_nombre}
                         </h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          {cleanPhone ? (
-                            <a
-                              href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(
-                                `¡Hola ${pedido.cliente_nombre}! Te contactamos de SO Shopping Online sobre tu encargo (#${pedido.prenda?.codigo_shein || ''}). Saldo pendiente: ${formatCurrency(pedido.saldo_pendiente)}.`
-                              )}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1.5 text-xs text-[#065F46] font-medium bg-[#D1FAE5]/80 px-2.5 py-0.5 rounded-full border border-[#A7F3D0]/70 hover:bg-[#A7F3D0] transition-colors"
-                            >
-                              <MessageCircle className="w-3 h-3 fill-[#065F46]" />
-                              <span className="font-mono">{cleanPhone}</span>
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400 font-mono">
-                              {pedido.cliente_telefono || '-'}
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-[10px] text-rose-600 block">
+                          Tocar para ver ficha completa
+                        </span>
                       </div>
-                    </div>
+                    </button>
 
                     <select
                       value={pedido.estado}
                       onChange={(e) => onUpdateEstado(pedido.id, e.target.value as PedidoEstado)}
-                      className={`text-xs font-semibold rounded-full px-2.5 py-0.5 border transition-colors outline-none cursor-pointer whitespace-nowrap ${
+                      className={`text-xs font-semibold rounded-full px-2 py-0.5 border transition-colors outline-none cursor-pointer whitespace-nowrap shadow-2xs flex-shrink-0 ${
                         ESTADOS_PEDIDO_CONFIG[pedido.estado]?.badgeClass || 'bg-slate-100'
                       }`}
                     >
@@ -550,91 +568,74 @@ export function PedidosTable({
                     </select>
                   </div>
 
-                  {/* Prenda & Code */}
-                  <div className="flex items-center gap-3 bg-rose-50/40 p-2.5 rounded-2xl border border-rose-100">
-                    <div className="w-12 h-14 rounded-xl overflow-hidden bg-rose-100 flex-shrink-0 relative border border-rose-200">
+                  {/* Fila 2: Prenda */}
+                  <div className="flex items-center gap-2.5 bg-rose-50/30 p-2 rounded-xl border border-rose-100">
+                    <div className="w-9 h-11 rounded-lg overflow-hidden bg-rose-100 flex-shrink-0 relative border border-rose-200">
                       {pedido.prenda?.url_foto ? (
                         <Image
                           src={pedido.prenda.url_foto}
                           alt={pedido.prenda.nombre}
                           fill
-                          sizes="48px"
+                          sizes="40px"
                           className="object-cover"
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-rose-300 bg-rose-50">
-                          <ImageOff className="w-4 h-4" />
+                          <ImageOff className="w-3.5 h-3.5" />
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="font-bold text-slate-900 text-xs truncate">
                         {pedido.prenda?.nombre || 'Prenda no vinculada'}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[11px] bg-white border border-rose-100 text-slate-700 px-2 py-0.5 rounded-md font-medium">
-                          Talla: {pedido.prenda?.talla || '-'}
-                        </span>
-                        {pedido.prenda?.codigo_shein && (
-                          <button
-                            type="button"
-                            onClick={() => copyCode(pedido.prenda!.codigo_shein, pedido.id)}
-                            className="inline-flex items-center gap-1 font-mono text-[10px] text-slate-600 bg-white border border-rose-100 px-1.5 py-0.5 rounded-md"
-                          >
-                            <span>{pedido.prenda.codigo_shein}</span>
-                            {copiedCodeId === pedido.id ? (
-                              <Check className="w-2.5 h-2.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-2.5 h-2.5 text-rose-400" />
-                            )}
-                          </button>
-                        )}
-                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Talla: {pedido.prenda?.talla || '-'} • Ref: {pedido.prenda?.codigo_shein || 'N/A'}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Financial Details Grid */}
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs bg-rose-50/20 p-2.5 rounded-2xl border border-rose-100">
+                  {/* Fila 3: Montos Financieros (Total, Pagado, Saldo) */}
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs bg-rose-50/20 p-2.5 rounded-xl border border-rose-100">
                     <div>
                       <span className="text-[10px] text-slate-400 block font-medium">Total</span>
                       <span className="font-bold text-slate-900">{formatCurrency(pedido.precio_total)}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-rose-600 block font-medium">Anticipo</span>
+                      <span className="text-[10px] text-rose-600 block font-medium">Pagado</span>
                       <span className="font-bold text-rose-700">{formatCurrency(pedido.anticipo_pagado)}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-amber-600 block font-medium">Saldo Deuda</span>
-                      <span className="font-bold text-amber-800">{formatCurrency(pedido.saldo_pendiente)}</span>
+                      <span className="text-[10px] text-slate-500 block font-medium">Saldo Deuda</span>
+                      <span
+                        className={`font-bold inline-block px-1.5 py-0.2 rounded-full text-xs ${
+                          debe ? 'text-amber-800 bg-amber-50' : 'text-emerald-800 bg-emerald-50'
+                        }`}
+                      >
+                        {formatCurrency(pedido.saldo_pendiente)}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Footer: Date & Liquidar Button */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-slate-400">
-                      {formatDate(pedido.fecha_pedido)}
-                    </span>
+                  {/* Fila 4: Botones Acciones ("+ Abono" y "Ver Ficha") */}
+                  <div className="grid grid-cols-2 gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenAbonoModal(pedido)}
+                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs border border-rose-200 shadow-2xs active:scale-95 transition-all"
+                    >
+                      <PlusCircle className="w-3.5 h-3.5 text-rose-500" />
+                      <span>+ Abono</span>
+                    </button>
 
-                    {!isLiquidado ? (
-                      <button
-                        type="button"
-                        onClick={() => handleLiquidarClick(pedido)}
-                        disabled={isLiquidating}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#4E9F76] hover:bg-[#3D8361] text-white font-bold text-xs shadow-xs hover:shadow-md hover:shadow-emerald-950/15 transition-all duration-300 ease-out active:scale-95 disabled:opacity-50"
-                      >
-                        {isLiquidating ? (
-                          <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                        ) : (
-                          <CheckCircle className="w-3.5 h-3.5 text-white" />
-                        )}
-                        <span>Cobrar & Liquidar</span>
-                      </button>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 bg-[#F3E8FF] border border-[#E9D5FF] px-3 py-1 rounded-lg">
-                        <Check className="w-3.5 h-3.5 text-purple-600" />
-                        Liquidado
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPedidoForFicha(pedido)}
+                      className="inline-flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs active:scale-95 transition-all"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Ver Ficha</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -642,6 +643,467 @@ export function PedidosTable({
           )}
         </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* MODAL 1: FICHA DE LA CLIENTA Y DETALLE DEL PEDIDO */}
+      {/* ========================================================= */}
+      {activeFichaPedido && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden my-6">
+            {/* Header del Modal */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#FCE7F3] bg-[#FFF1F2]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white border border-[#FCE7F3] text-rose-600 flex items-center justify-center font-black text-sm shadow-xs">
+                  {activeFichaPedido.cliente_nombre ? activeFichaPedido.cliente_nombre[0].toUpperCase() : 'C'}
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base leading-tight">
+                    Ficha de {activeFichaPedido.cliente_nombre}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Registrado el {formatDate(activeFichaPedido.fecha_pedido)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPedidoForFicha(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Contenido de la Ficha */}
+            <div className="p-4 sm:p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+              {/* Sección 1: Clienta & WhatsApp + Estado */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                {/* Contacto WhatsApp */}
+                <div className="p-3.5 rounded-2xl bg-rose-50/20 border border-rose-100 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                      Contacto Directo
+                    </span>
+                    <p className="text-xs font-mono font-bold text-slate-800">
+                      {activeFichaPedido.cliente_telefono || 'Sin teléfono'}
+                    </p>
+                  </div>
+                  {activeFichaPedido.cliente_telefono && (
+                    <a
+                      href={`https://wa.me/${activeFichaPedido.cliente_telefono.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                        `¡Hola ${activeFichaPedido.cliente_nombre}! Te contactamos de SO Shopping Online sobre tu encargo (${activeFichaPedido.prenda?.nombre || 'Prenda'}, Ref: ${activeFichaPedido.prenda?.codigo_shein || 'N/A'}). Total: ${formatCurrency(activeFichaPedido.precio_total)}, Total pagado: ${formatCurrency(activeFichaPedido.anticipo_pagado)}, Saldo pendiente: ${formatCurrency(activeFichaPedido.saldo_pendiente)}.`
+                      )}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-[#D1FAE5] hover:bg-[#A7F3D0] text-[#065F46] text-xs font-bold border border-[#A7F3D0] transition-colors shadow-2xs"
+                    >
+                      <MessageCircle className="w-4 h-4 fill-[#065F46]" />
+                      <span>Abrir Chat de WhatsApp</span>
+                    </a>
+                  )}
+                </div>
+
+                {/* Estado del Pedido */}
+                <div className="p-3.5 rounded-2xl bg-rose-50/20 border border-rose-100 flex flex-col justify-between">
+                  <div>
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                      Estado Actual
+                    </span>
+                    <p className="text-xs text-slate-600 mb-2">
+                      Cambia el estado de entrega o preparación:
+                    </p>
+                  </div>
+                  <select
+                    value={activeFichaPedido.estado}
+                    onChange={(e) => onUpdateEstado(activeFichaPedido.id, e.target.value as PedidoEstado)}
+                    className={`w-full text-xs font-bold rounded-xl px-3 py-2 border transition-colors outline-none cursor-pointer shadow-xs ${
+                      ESTADOS_PEDIDO_CONFIG[activeFichaPedido.estado]?.badgeClass || 'bg-white text-slate-800'
+                    }`}
+                  >
+                    {allEstadosList.map((st) => (
+                      <option key={st} value={st} className="bg-white text-slate-900 font-normal">
+                        {ESTADOS_PEDIDO_CONFIG[st].label} - {ESTADOS_PEDIDO_CONFIG[st].description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Sección 2: Datos de la Prenda Encargada */}
+              <div className="p-4 rounded-2xl bg-white border border-rose-200/80 shadow-xs">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-3">
+                  Prenda Encargada
+                </span>
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+                  {/* Foto ampliada */}
+                  <div className="w-32 h-40 sm:w-28 sm:h-36 rounded-2xl overflow-hidden bg-rose-50 flex-shrink-0 relative border border-rose-200 shadow-sm">
+                    {activeFichaPedido.prenda?.url_foto ? (
+                      <Image
+                        src={activeFichaPedido.prenda.url_foto}
+                        alt={activeFichaPedido.prenda.nombre}
+                        fill
+                        sizes="160px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-rose-300 p-2 text-center">
+                        <ImageOff className="w-6 h-6 mb-1" />
+                        <span className="text-[10px]">Sin foto</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Detalles Prenda */}
+                  <div className="flex-1 space-y-2 text-center sm:text-left w-full">
+                    <h4 className="text-sm font-bold text-slate-900">
+                      {activeFichaPedido.prenda?.nombre || 'Prenda no vinculada'}
+                    </h4>
+
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                        Talla: {activeFichaPedido.prenda?.talla || 'Única'}
+                      </span>
+
+                      {activeFichaPedido.prenda?.codigo_shein && (
+                        <button
+                          type="button"
+                          onClick={() => copyCode(activeFichaPedido.prenda!.codigo_shein, activeFichaPedido.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono text-slate-700 bg-slate-50 hover:bg-rose-50 border border-slate-200 transition-colors"
+                          title="Copiar código al portapapeles"
+                        >
+                          <Tag className="w-3 h-3 text-rose-400" />
+                          <span>Ref: {activeFichaPedido.prenda.codigo_shein}</span>
+                          {copiedCodeId === activeFichaPedido.id ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3 text-slate-400" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+
+                    {activeFichaPedido.notas && (
+                      <div className="pt-2 text-left">
+                        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                          Notas / Observaciones del pedido:
+                        </span>
+                        <p className="text-xs text-slate-700 bg-rose-50/30 p-2.5 rounded-xl border border-rose-100 mt-1">
+                          {activeFichaPedido.notas}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Sección 3: Historial Cronológico de Abonos & Cobranza */}
+              <div className="p-4 rounded-2xl bg-white border border-rose-200/80 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Historial de Abonos y Pagos
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAbonoModal(activeFichaPedido)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold shadow-xs shadow-rose-200 transition-all active:scale-95"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>+ Registrar Abono</span>
+                  </button>
+                </div>
+
+                {/* Resumen Financiero de la Ficha */}
+                <div className="grid grid-cols-3 gap-2.5 p-3 rounded-2xl bg-rose-50/20 border border-rose-100 text-center">
+                  <div>
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">Precio Total</span>
+                    <span className="text-sm sm:text-base font-black text-slate-900">
+                      {formatCurrency(activeFichaPedido.precio_total)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-rose-600 font-semibold uppercase block">Total Pagado</span>
+                    <span className="text-sm sm:text-base font-black text-rose-700">
+                      {formatCurrency(activeFichaPedido.anticipo_pagado)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase block">Saldo Restante</span>
+                    <span
+                      className={`text-sm sm:text-base font-black ${
+                        Number(activeFichaPedido.saldo_pendiente) > 0 ? 'text-amber-800' : 'text-emerald-700'
+                      }`}
+                    >
+                      {formatCurrency(activeFichaPedido.saldo_pendiente)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Lista de Abonos Cronológicos */}
+                <div className="space-y-2">
+                  {(!activeFichaPedido.abonos || activeFichaPedido.abonos.length === 0) &&
+                  Number(activeFichaPedido.anticipo_pagado) <= 0 ? (
+                    <div className="py-6 text-center text-slate-400 text-xs">
+                      <Wallet className="w-6 h-6 mx-auto mb-1.5 text-rose-200" />
+                      No se han registrado abonos todavía para este pedido.
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-rose-100/70 border border-rose-100 rounded-2xl overflow-hidden bg-rose-50/10">
+                      {/* Si no hay lista explícita pero tiene anticipo_pagado registrado */}
+                      {(!activeFichaPedido.abonos || activeFichaPedido.abonos.length === 0) &&
+                        Number(activeFichaPedido.anticipo_pagado) > 0 && (
+                          <div className="p-3 flex items-center justify-between text-xs hover:bg-rose-50/30 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-[10px]">
+                                1
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-800">
+                                  {formatDateOnly(activeFichaPedido.fecha_pedido)}
+                                </p>
+                                <span className="text-[10px] text-slate-400">
+                                  Anticipo inicial registrado
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-bold text-rose-700 text-sm">
+                                {formatCurrency(activeFichaPedido.anticipo_pagado)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                      {/* Lista de abonos reales */}
+                      {activeFichaPedido.abonos &&
+                        activeFichaPedido.abonos.map((abono, idx) => (
+                          <div
+                            key={abono.id || idx}
+                            className="p-3 flex items-center justify-between text-xs hover:bg-rose-50/30 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-6 h-6 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center font-bold text-[10px] flex-shrink-0">
+                                {idx + 1}
+                              </div>
+                              <div>
+                                <p className="font-bold text-slate-800">
+                                  {formatDate(abono.fecha_pago)}
+                                </p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[9.5px] px-1.5 py-0.2 rounded-md bg-white border border-rose-200 text-slate-600 font-semibold">
+                                    {abono.metodo || 'Efectivo'}
+                                  </span>
+                                  {abono.nota && (
+                                    <span className="text-[10px] text-slate-500">
+                                      • {abono.nota}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <span className="font-bold text-emerald-700 text-sm">
+                                + {formatCurrency(abono.monto)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Resumen al pie del historial */}
+                  <div className="pt-2 flex items-center justify-between text-xs font-semibold text-slate-500 px-1">
+                    <span>
+                      Total pagado: <strong className="text-slate-800">{formatCurrency(activeFichaPedido.anticipo_pagado)}</strong>
+                    </span>
+                    <span>
+                      Saldo restante:{' '}
+                      <strong className={Number(activeFichaPedido.saldo_pendiente) > 0 ? 'text-amber-800' : 'text-emerald-700'}>
+                        {formatCurrency(activeFichaPedido.saldo_pendiente)}
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Botón Cobrar & Liquidar si no está liquidado */}
+                {activeFichaPedido.estado !== 'LIQUIDADO' && (
+                  <div className="pt-2 border-t border-rose-100">
+                    <button
+                      type="button"
+                      onClick={() => handleLiquidarClick(activeFichaPedido)}
+                      disabled={liquidatingId === activeFichaPedido.id}
+                      className="w-full py-2.5 rounded-2xl bg-[#4E9F76] hover:bg-[#3D8361] text-white text-xs font-bold shadow-sm transition-all flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50"
+                    >
+                      {liquidatingId === activeFichaPedido.id ? (
+                        <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <CheckCircle className="w-4 h-4" />
+                      )}
+                      <span>Cobrar Saldo Total y Liquidar Pedido</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer de Ficha */}
+            <div className="p-4 sm:p-5 border-t border-[#FCE7F3] bg-[#FFF1F2] flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedPedidoForFicha(null)}
+                className="px-5 py-2 rounded-2xl bg-white border border-[#FCE7F3] text-slate-700 text-xs font-bold hover:bg-rose-50 transition-colors"
+              >
+                Cerrar Ficha
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL 2: REGISTRAR NUEVO ABONO */}
+      {/* ========================================================= */}
+      {selectedPedidoForAbono && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl border border-rose-200 overflow-hidden my-6">
+            {/* Header del Modal Abono */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[#FCE7F3] bg-[#FFF1F2]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-rose-500 text-white flex items-center justify-center shadow-xs">
+                  <DollarSign className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">Registrar Abono</h3>
+                  <p className="text-xs text-slate-500">Clienta: {selectedPedidoForAbono.cliente_nombre}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPedidoForAbono(null)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Formulario Rápido de Abono */}
+            <form onSubmit={handleGuardarAbono} className="p-4 sm:p-6 space-y-4">
+              {/* Tarjeta de Saldo Pendiente Actual */}
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-amber-700 uppercase font-bold tracking-wider block">
+                    Saldo Pendiente Actual
+                  </span>
+                  <p className="text-lg font-black text-amber-900">
+                    {formatCurrency(selectedPedidoForAbono.saldo_pendiente)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAbonoMonto(Number(selectedPedidoForAbono.saldo_pendiente).toFixed(2))}
+                  className="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-bold transition-colors"
+                >
+                  Pagar Saldo Completo
+                </button>
+              </div>
+
+              {/* Monto del Abono */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Monto del Abono (Bs) *
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-rose-500 font-bold text-sm">Bs</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={Number(selectedPedidoForAbono.saldo_pendiente) > 0 ? Number(selectedPedidoForAbono.saldo_pendiente) : undefined}
+                    placeholder="0.00"
+                    value={abonoMonto}
+                    onChange={(e) => setAbonoMonto(e.target.value)}
+                    required
+                    autoFocus
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-rose-200 text-base font-black text-slate-900 focus:border-rose-400 outline-none bg-rose-50/10"
+                  />
+                </div>
+              </div>
+
+              {/* Método de Pago */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Método de Pago *
+                </label>
+                <select
+                  value={abonoMetodo}
+                  onChange={(e) => setAbonoMetodo(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-rose-200 text-xs sm:text-sm font-semibold text-slate-800 focus:border-rose-400 outline-none bg-rose-50/10"
+                >
+                  <option value="Efectivo">💵 Efectivo en mano</option>
+                  <option value="QR / Transferencia">📱 QR / Transferencia Bancaria</option>
+                  <option value="Tigo Money">📲 Tigo Money</option>
+                  <option value="Otro">💳 Otro método</option>
+                </select>
+              </div>
+
+              {/* Fecha del Abono */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Fecha del Pago *
+                </label>
+                <input
+                  type="date"
+                  value={abonoFecha}
+                  onChange={(e) => setAbonoFecha(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-rose-200 text-xs sm:text-sm font-semibold text-slate-800 focus:border-rose-400 outline-none bg-rose-50/10"
+                />
+              </div>
+
+              {/* Nota / Concepto */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Concepto / Nota (Opcional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ej. Seña inicial, Abono semana 1, Saldo final"
+                  value={abonoNota}
+                  onChange={(e) => setAbonoNota(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl border border-rose-200 text-xs text-slate-800 focus:border-rose-400 outline-none bg-rose-50/10"
+                />
+              </div>
+
+              {/* Botones de acción */}
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#FCE7F3]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPedidoForAbono(null)}
+                  className="px-4 py-2 rounded-2xl border border-rose-100 text-slate-600 text-xs font-semibold hover:bg-rose-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingAbono}
+                  className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-xs font-bold shadow-md shadow-rose-200 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+                >
+                  {savingAbono ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                      <span>Guardando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="w-4 h-4 text-white" />
+                      <span>Guardar Abono</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Compra, Pedido, PedidoEstado, Prenda } from '@/types/database';
+import { AbonoPedido, Compra, Pedido, PedidoEstado, Prenda } from '@/types/database';
 import { INITIAL_COMPRAS, INITIAL_PEDIDOS, INITIAL_PRENDAS } from '@/lib/demo-data';
 import { PasscodeGate } from '@/components/PasscodeGate';
 import { MetricsSummary } from '@/components/MetricsSummary';
@@ -61,14 +61,29 @@ export default function DashboardPage() {
           setPrendas(prendasData);
         }
 
-        // Fetch Pedidos with joined Prenda
-        const { data: pedidosData } = await supabase
-          .from('pedidos')
-          .select('*, prenda:prendas(*)')
-          .order('fecha_pedido', { ascending: false });
+        // Fetch Pedidos with joined Prenda and Abonos (con fallback seguro)
+        let pedidosFinal: Pedido[] = [];
+        try {
+          const { data: pedidosWithAbonos, error: abonosErr } = await supabase
+            .from('pedidos')
+            .select('*, prenda:prendas(*), abonos:abonos_pedidos(*)')
+            .order('fecha_pedido', { ascending: false });
 
-        if (pedidosData && pedidosData.length > 0) {
-          setPedidos(pedidosData);
+          if (!abonosErr && pedidosWithAbonos) {
+            pedidosFinal = pedidosWithAbonos;
+          } else {
+            throw abonosErr;
+          }
+        } catch {
+          const { data: basicPedidos } = await supabase
+            .from('pedidos')
+            .select('*, prenda:prendas(*)')
+            .order('fecha_pedido', { ascending: false });
+          if (basicPedidos) pedidosFinal = basicPedidos;
+        }
+
+        if (pedidosFinal && pedidosFinal.length > 0) {
+          setPedidos(pedidosFinal);
         }
 
         // Fetch Compras
@@ -218,6 +233,110 @@ export default function DashboardPage() {
       }
     } catch (err: any) {
       console.error('Error en liquidar:', err);
+      throw err;
+    }
+  };
+
+  // Handle Register Abono (Multiple partial payments)
+  const handleRegistrarAbono = async (
+    pedidoId: string,
+    abonoData: { monto: number; metodo: string; fecha_pago: string; nota?: string }
+  ) => {
+    try {
+      const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
+      let createdAbono: AbonoPedido;
+
+      if (isSupabaseConfigured) {
+        try {
+          const { data, error } = await supabase
+            .from('abonos_pedidos')
+            .insert([
+              {
+                pedido_id: pedidoId,
+                monto: abonoData.monto,
+                metodo: abonoData.metodo,
+                fecha_pago: abonoData.fecha_pago,
+                nota: abonoData.nota || null,
+              },
+            ])
+            .select()
+            .single();
+
+          if (error) throw error;
+          createdAbono = data;
+        } catch (dbErr) {
+          console.warn('Guardando abono en memoria (tabla abonos_pedidos no lista en Supabase):', dbErr);
+          createdAbono = {
+            id: `abn-${Date.now()}`,
+            pedido_id: pedidoId,
+            monto: abonoData.monto,
+            metodo: abonoData.metodo,
+            fecha_pago: abonoData.fecha_pago,
+            nota: abonoData.nota || null,
+            created_at: new Date().toISOString(),
+          };
+        }
+      } else {
+        createdAbono = {
+          id: `abn-${Date.now()}`,
+          pedido_id: pedidoId,
+          monto: abonoData.monto,
+          metodo: abonoData.metodo,
+          fecha_pago: abonoData.fecha_pago,
+          nota: abonoData.nota || null,
+          created_at: new Date().toISOString(),
+        };
+      }
+
+      // Update pedido in React state & Supabase
+      setPedidos((prev) =>
+        prev.map((p) => {
+          if (p.id !== pedidoId) return p;
+
+          let currentAbonos = p.abonos ? [...p.abonos] : [];
+          if (currentAbonos.length === 0 && Number(p.anticipo_pagado) > 0) {
+            currentAbonos.push({
+              id: `abn-init-${p.id}`,
+              pedido_id: p.id,
+              monto: Number(p.anticipo_pagado),
+              metodo: 'Anticipo inicial',
+              nota: 'Registro inicial de apartado',
+              fecha_pago: p.fecha_pedido || p.created_at,
+              created_at: p.created_at,
+            });
+          }
+
+          currentAbonos.push(createdAbono);
+          const nuevoTotalAbonado = currentAbonos.reduce((acc, a) => acc + (Number(a.monto) || 0), 0);
+          const nuevoSaldo = Math.max((Number(p.precio_total) || 0) - nuevoTotalAbonado, 0);
+          const nuevoEstado = nuevoSaldo === 0 && p.estado !== 'CANCELADO' ? 'LIQUIDADO' : p.estado;
+
+          // Sync updated pedido totals with Supabase
+          if (isSupabaseConfigured) {
+            supabase
+              .from('pedidos')
+              .update({
+                anticipo_pagado: nuevoTotalAbonado,
+                saldo_pendiente: nuevoSaldo,
+                estado: nuevoEstado,
+              })
+              .eq('id', pedidoId)
+              .then(({ error }) => {
+                if (error) console.error('Error al actualizar totales de pedido en Supabase:', error);
+              });
+          }
+
+          return {
+            ...p,
+            abonos: currentAbonos,
+            anticipo_pagado: nuevoTotalAbonado,
+            saldo_pendiente: nuevoSaldo,
+            estado: nuevoEstado,
+          };
+        })
+      );
+    } catch (err: any) {
+      console.error('Error en registrar abono:', err);
       throw err;
     }
   };
@@ -516,6 +635,7 @@ export default function DashboardPage() {
               pedidos={pedidos}
               onUpdateEstado={handleUpdateEstado}
               onLiquidar={handleLiquidar}
+              onRegistrarAbono={handleRegistrarAbono}
               onNuevoPedidoClick={() => setIsPedidoModalOpen(true)}
             />
           </section>

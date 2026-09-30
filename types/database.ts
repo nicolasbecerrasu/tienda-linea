@@ -21,6 +21,16 @@ export type PedidoEstado =
   | 'LIQUIDADO'
   | 'CANCELADO';
 
+export interface AbonoPedido {
+  id: string;
+  pedido_id: string;
+  monto: number;
+  metodo: string;
+  nota?: string | null;
+  fecha_pago: string;
+  created_at?: string;
+}
+
 export interface Pedido {
   id: string;
   cliente_nombre: string;
@@ -34,6 +44,7 @@ export interface Pedido {
   notas: string | null;
   created_at: string;
   prenda?: Prenda | null;
+  abonos?: AbonoPedido[];
 }
 
 export interface Compra {

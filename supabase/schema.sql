@@ -47,12 +47,25 @@ CREATE TABLE IF NOT EXISTS public.compras (
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- 4. TABLA ABONOS_PEDIDOS (Pagos parciales / múltiples por encargo)
+CREATE TABLE IF NOT EXISTS public.abonos_pedidos (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    pedido_id UUID NOT NULL REFERENCES public.pedidos(id) ON DELETE CASCADE,
+    monto NUMERIC(10, 2) NOT NULL CHECK (monto > 0),
+    metodo TEXT NOT NULL DEFAULT 'Efectivo',
+    nota TEXT,
+    fecha_pago TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
 -- Índices recomendados para rendimiento
 CREATE INDEX IF NOT EXISTS idx_prendas_estado ON public.prendas(estado);
 CREATE INDEX IF NOT EXISTS idx_prendas_codigo_shein ON public.prendas(codigo_shein);
 CREATE INDEX IF NOT EXISTS idx_pedidos_estado ON public.pedidos(estado);
 CREATE INDEX IF NOT EXISTS idx_pedidos_fecha ON public.pedidos(fecha_pedido DESC);
 CREATE INDEX IF NOT EXISTS idx_compras_fecha ON public.compras(fecha_compra DESC);
+CREATE INDEX IF NOT EXISTS idx_abonos_pedido_id ON public.abonos_pedidos(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_abonos_fecha_pago ON public.abonos_pedidos(fecha_pago DESC);
 
 -- Trigger para calcular automáticamente el saldo_pendiente en pedidos
 CREATE OR REPLACE FUNCTION update_saldo_pendiente()
@@ -75,6 +88,7 @@ EXECUTE FUNCTION update_saldo_pendiente();
 ALTER TABLE public.prendas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pedidos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.compras ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.abonos_pedidos ENABLE ROW LEVEL SECURITY;
 
 -- Catálogo de prendas: lectura pública para clientes
 DROP POLICY IF EXISTS "Permitir lectura publica de prendas" ON public.prendas;
@@ -99,6 +113,12 @@ WITH CHECK (true);
 DROP POLICY IF EXISTS "Permitir gestion completa de compras" ON public.compras;
 CREATE POLICY "Permitir gestion completa de compras"
 ON public.compras FOR ALL
+USING (true)
+WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Permitir gestion completa de abonos" ON public.abonos_pedidos;
+CREATE POLICY "Permitir gestion completa de abonos"
+ON public.abonos_pedidos FOR ALL
 USING (true)
 WITH CHECK (true);
 
