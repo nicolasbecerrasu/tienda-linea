@@ -388,82 +388,82 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Navigation Tabs: 2x2 Grid on Mobile (<640px) & Single Row on Desktop (sm:) */}
-          <div className="py-2.5 mb-2 sm:mb-0">
-            <div className="grid grid-cols-2 sm:inline-flex gap-2 sm:gap-1 p-1.5 bg-white border border-rose-100 rounded-2xl shadow-sm w-full sm:w-auto">
-              {/* Fila 1 - Col 1: Métricas */}
+          {/* Navigation Tabs: Individual Pill Buttons (2x2 Grid on Mobile, Flex Row on Desktop) */}
+          <div className="py-2.5 sm:py-3 mb-2 sm:mb-1">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
+              {/* Buton 1: Métricas */}
               <button
                 onClick={() => setActiveTab('metricas')}
-                className={`py-2 px-2 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-medium sm:font-semibold transition-all whitespace-nowrap active:scale-95 flex items-center justify-center gap-1.5 ${
+                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
                   activeTab === 'metricas'
-                    ? 'bg-rose-50 text-[#F43F5E] font-bold shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-rose-50/50'
+                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
+                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
                 }`}
               >
-                <LayoutDashboard className="w-3.5 h-3.5 flex-shrink-0" />
+                <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
                 <span>Métricas</span>
               </button>
 
-              {/* Fila 1 - Col 2: Stock Inmediato */}
+              {/* Buton 2: Stock Inmediato */}
               <button
                 onClick={() => setActiveTab('stock')}
-                className={`py-2 px-2 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-medium sm:font-semibold transition-all whitespace-nowrap active:scale-95 flex items-center justify-center gap-1.5 ${
+                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
                   activeTab === 'stock'
-                    ? 'bg-rose-50 text-[#F43F5E] font-bold shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-rose-50/50'
+                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
+                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
                 }`}
               >
-                <Package className="w-3.5 h-3.5 flex-shrink-0" />
+                <Package className="w-4 h-4 flex-shrink-0" />
                 <span>Stock Inmediato</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold flex-shrink-0 ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
                     activeTab === 'stock'
-                      ? 'bg-[#F43F5E] text-white'
-                      : 'bg-rose-100/70 text-[#F43F5E]'
+                      ? 'bg-white text-rose-600'
+                      : 'bg-rose-100 text-rose-700'
                   }`}
                 >
                   {stockDisponibleCount}
                 </span>
               </button>
 
-              {/* Fila 2 - Col 1: Pedidos */}
+              {/* Buton 3: Pedidos */}
               <button
                 onClick={() => setActiveTab('pedidos')}
-                className={`py-2 px-2 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-medium sm:font-semibold transition-all whitespace-nowrap active:scale-95 flex items-center justify-center gap-1.5 ${
+                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
                   activeTab === 'pedidos'
-                    ? 'bg-rose-50 text-[#F43F5E] font-bold shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-rose-50/50'
+                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
+                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
                 }`}
               >
-                <ShoppingBag className="w-3.5 h-3.5 flex-shrink-0" />
+                <ShoppingBag className="w-4 h-4 flex-shrink-0" />
                 <span>Pedidos</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold flex-shrink-0 ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
                     activeTab === 'pedidos'
-                      ? 'bg-[#F43F5E] text-white'
-                      : 'bg-rose-100/70 text-[#F43F5E]'
+                      ? 'bg-white text-rose-600'
+                      : 'bg-rose-100 text-rose-700'
                   }`}
                 >
                   {pedidos.length}
                 </span>
               </button>
 
-              {/* Fila 2 - Col 2: Compras */}
+              {/* Buton 4: Compras */}
               <button
                 onClick={() => setActiveTab('compras')}
-                className={`py-2 px-2 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-lg text-xs font-medium sm:font-semibold transition-all whitespace-nowrap active:scale-95 flex items-center justify-center gap-1.5 ${
+                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
                   activeTab === 'compras'
-                    ? 'bg-rose-50 text-[#F43F5E] font-bold shadow-2xs'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-rose-50/50'
+                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
+                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
                 }`}
               >
-                <Receipt className="w-3.5 h-3.5 flex-shrink-0" />
+                <Receipt className="w-4 h-4 flex-shrink-0" />
                 <span>Compras</span>
                 <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold flex-shrink-0 ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
                     activeTab === 'compras'
-                      ? 'bg-[#F43F5E] text-white'
-                      : 'bg-rose-100/70 text-[#F43F5E]'
+                      ? 'bg-white text-rose-600'
+                      : 'bg-rose-100 text-rose-700'
                   }`}
                 >
                   {compras.length}
