@@ -3,13 +3,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { AbonoPedido, Compra, Pedido, PedidoEstado, Prenda } from '@/types/database';
-import { INITIAL_COMPRAS, INITIAL_PEDIDOS, INITIAL_PRENDAS } from '@/lib/demo-data';
+import { AbonoPedido, Compra, ConciergeEvent, CriticalStockAlert, Pedido, PedidoEstado, Prenda } from '@/types/database';
+import { INITIAL_COMPRAS, INITIAL_CONCIERGE_STREAM, INITIAL_CRITICAL_ALERTS, INITIAL_PEDIDOS, INITIAL_PRENDAS } from '@/lib/demo-data';
 import { PasscodeGate } from '@/components/PasscodeGate';
 import { MetricsSummary } from '@/components/MetricsSummary';
 import { StockSection } from '@/components/StockSection';
 import { PedidosTable } from '@/components/PedidosTable';
 import { ComprasSection } from '@/components/ComprasSection';
+import { ConciergeStream } from '@/components/ConciergeStream';
 import { PrendaUploadModal } from '@/components/PrendaUploadModal';
 import { NuevoPedidoModal } from '@/components/NuevoPedidoModal';
 import {
@@ -22,15 +23,21 @@ import {
   ExternalLink,
   Package,
   RefreshCw,
+  MessageSquare,
+  ShieldCheck,
+  Crown,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
-  const [activeTab, setActiveTab] = useState<'metricas' | 'stock' | 'pedidos' | 'compras'>('metricas');
+  const [userRole, setUserRole] = useState<'direccion' | 'concierge'>('direccion');
+  const [activeTab, setActiveTab] = useState<'metricas' | 'concierge' | 'pedidos' | 'stock' | 'compras'>('metricas');
 
   const [pedidos, setPedidos] = useState<Pedido[]>(INITIAL_PEDIDOS);
   const [prendas, setPrendas] = useState<Prenda[]>(INITIAL_PRENDAS);
   const [compras, setCompras] = useState<Compra[]>(INITIAL_COMPRAS);
+  const [conciergeEvents, setConciergeEvents] = useState<ConciergeEvent[]>(INITIAL_CONCIERGE_STREAM);
+  const [criticalAlerts, setCriticalAlerts] = useState<CriticalStockAlert[]>(INITIAL_CRITICAL_ALERTS);
 
   const [isPrendaModalOpen, setIsPrendaModalOpen] = useState(false);
   const [isPedidoModalOpen, setIsPedidoModalOpen] = useState(false);
@@ -40,7 +47,9 @@ export default function DashboardPage() {
   // Check auth session on mount
   useEffect(() => {
     const auth = sessionStorage.getItem('so_dashboard_auth');
+    const role = (sessionStorage.getItem('so_user_role') as 'direccion' | 'concierge') || 'direccion';
     setIsAuthenticated(auth === 'true');
+    setUserRole(role);
   }, []);
 
   // Fetch initial data from Supabase
@@ -61,29 +70,14 @@ export default function DashboardPage() {
           setPrendas(prendasData);
         }
 
-        // Fetch Pedidos with joined Prenda and Abonos (con fallback seguro)
-        let pedidosFinal: Pedido[] = [];
-        try {
-          const { data: pedidosWithAbonos, error: abonosErr } = await supabase
-            .from('pedidos')
-            .select('*, prenda:prendas(*), abonos:abonos_pedidos(*)')
-            .order('fecha_pedido', { ascending: false });
+        // Fetch Pedidos with joined Prenda
+        const { data: pedidosData } = await supabase
+          .from('pedidos')
+          .select('*, prenda:prendas(*)')
+          .order('fecha_pedido', { ascending: false });
 
-          if (!abonosErr && pedidosWithAbonos) {
-            pedidosFinal = pedidosWithAbonos;
-          } else {
-            throw abonosErr;
-          }
-        } catch {
-          const { data: basicPedidos } = await supabase
-            .from('pedidos')
-            .select('*, prenda:prendas(*)')
-            .order('fecha_pedido', { ascending: false });
-          if (basicPedidos) pedidosFinal = basicPedidos;
-        }
-
-        if (pedidosFinal && pedidosFinal.length > 0) {
-          setPedidos(pedidosFinal);
+        if (pedidosData && pedidosData.length > 0) {
+          setPedidos(pedidosData);
         }
 
         // Fetch Compras
@@ -109,51 +103,6 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated]);
 
-  // Handle garment updates from Pestaña 2 (Stock)
-  const handleUpdatePrenda = async (updatedPrenda: Prenda) => {
-    try {
-      const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
-      if (isSupabaseConfigured) {
-        const { error } = await supabase
-          .from('prendas')
-          .update({
-            nombre: updatedPrenda.nombre,
-            codigo_shein: updatedPrenda.codigo_shein,
-            talla: updatedPrenda.talla,
-            precio_total: updatedPrenda.precio_total,
-            precio_reserva: updatedPrenda.precio_reserva,
-            estado: updatedPrenda.estado,
-          })
-          .eq('id', updatedPrenda.id);
-
-        if (error) throw error;
-      }
-
-      setPrendas((prev) =>
-        prev.map((p) => (p.id === updatedPrenda.id ? updatedPrenda : p))
-      );
-    } catch (err: any) {
-      console.error('Error al actualizar prenda:', err);
-      setPrendas((prev) =>
-        prev.map((p) => (p.id === updatedPrenda.id ? updatedPrenda : p))
-      );
-      throw err;
-    }
-  };
-
-  const handleEliminarPrenda = async (prendaId: string) => {
-    try {
-      const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
-      if (isSupabaseConfigured) {
-        await supabase.from('prendas').delete().eq('id', prendaId);
-      }
-      setPrendas((prev) => prev.filter((p) => p.id !== prendaId));
-    } catch (err: any) {
-      console.error('Error al eliminar prenda:', err);
-      setPrendas((prev) => prev.filter((p) => p.id !== prendaId));
-    }
-  };
-
   // Handle order status update
   const handleUpdateEstado = async (pedidoId: string, nuevoEstado: PedidoEstado) => {
     if (nuevoEstado === 'LIQUIDADO') {
@@ -175,8 +124,7 @@ export default function DashboardPage() {
       setPedidos((prev) =>
         prev.map((p) => (p.id === pedidoId ? { ...p, estado: nuevoEstado } : p))
       );
-    } catch (err: any) {
-      console.error('Error al actualizar estado:', err);
+    } catch (err) {
       setPedidos((prev) =>
         prev.map((p) => (p.id === pedidoId ? { ...p, estado: nuevoEstado } : p))
       );
@@ -197,7 +145,6 @@ export default function DashboardPage() {
         throw new Error(data.error || 'Error al liquidar el pedido');
       }
 
-      // Update state locally
       setPedidos((prev) =>
         prev.map((p) => {
           if (p.id === pedidoId) {
@@ -220,7 +167,6 @@ export default function DashboardPage() {
         })
       );
 
-      // Also clear photo from prenda catalog state if matched
       const currentOrder = pedidos.find((p) => p.id === pedidoId);
       if (currentOrder?.prenda_id) {
         setPrendas((prev) =>
@@ -231,113 +177,67 @@ export default function DashboardPage() {
           )
         );
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Error en liquidar:', err);
       throw err;
     }
   };
 
-  // Handle Register Abono (Multiple partial payments)
-  const handleRegistrarAbono = async (
-    pedidoId: string,
-    abonoData: { monto: number; metodo: string; fecha_pago: string; nota?: string }
-  ) => {
+  // Handle Restock action
+  const handleRestock = (alertId: string) => {
+    // Add event to live stream
+    const targetAlert = criticalAlerts.find((a) => a.id === alertId);
+    if (targetAlert) {
+      const newEvt: ConciergeEvent = {
+        id: `evt-${Date.now()}`,
+        cliente_nombre: 'Atelier Central',
+        tipo: 'bespoke_appointment',
+        descripcion: `Reposición urgente de 10 unidades de ${targetAlert.nombre} enviada al Taller`,
+        hora: 'Justo ahora',
+        vip_tier: 'Diamante',
+      };
+      setConciergeEvents((prev) => [newEvt, ...prev]);
+    }
+  };
+
+  // Handle update garment stock
+  const handleUpdatePrenda = async (updatedPrenda: Prenda) => {
     try {
       const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
-      let createdAbono: AbonoPedido;
-
       if (isSupabaseConfigured) {
-        try {
-          const { data, error } = await supabase
-            .from('abonos_pedidos')
-            .insert([
-              {
-                pedido_id: pedidoId,
-                monto: abonoData.monto,
-                metodo: abonoData.metodo,
-                fecha_pago: abonoData.fecha_pago,
-                nota: abonoData.nota || null,
-              },
-            ])
-            .select()
-            .single();
-
-          if (error) throw error;
-          createdAbono = data;
-        } catch (dbErr) {
-          console.warn('Guardando abono en memoria (tabla abonos_pedidos no lista en Supabase):', dbErr);
-          createdAbono = {
-            id: `abn-${Date.now()}`,
-            pedido_id: pedidoId,
-            monto: abonoData.monto,
-            metodo: abonoData.metodo,
-            fecha_pago: abonoData.fecha_pago,
-            nota: abonoData.nota || null,
-            created_at: new Date().toISOString(),
-          };
-        }
-      } else {
-        createdAbono = {
-          id: `abn-${Date.now()}`,
-          pedido_id: pedidoId,
-          monto: abonoData.monto,
-          metodo: abonoData.metodo,
-          fecha_pago: abonoData.fecha_pago,
-          nota: abonoData.nota || null,
-          created_at: new Date().toISOString(),
-        };
+        await supabase
+          .from('prendas')
+          .update({
+            nombre: updatedPrenda.nombre,
+            codigo_shein: updatedPrenda.codigo_shein,
+            talla: updatedPrenda.talla,
+            precio_total: updatedPrenda.precio_total,
+            precio_reserva: updatedPrenda.precio_reserva,
+            estado: updatedPrenda.estado,
+          })
+          .eq('id', updatedPrenda.id);
       }
-
-      // Update pedido in React state & Supabase
-      setPedidos((prev) =>
-        prev.map((p) => {
-          if (p.id !== pedidoId) return p;
-
-          let currentAbonos = p.abonos ? [...p.abonos] : [];
-          if (currentAbonos.length === 0 && Number(p.anticipo_pagado) > 0) {
-            currentAbonos.push({
-              id: `abn-init-${p.id}`,
-              pedido_id: p.id,
-              monto: Number(p.anticipo_pagado),
-              metodo: 'Anticipo inicial',
-              nota: 'Registro inicial de apartado',
-              fecha_pago: p.fecha_pedido || p.created_at,
-              created_at: p.created_at,
-            });
-          }
-
-          currentAbonos.push(createdAbono);
-          const nuevoTotalAbonado = currentAbonos.reduce((acc, a) => acc + (Number(a.monto) || 0), 0);
-          const nuevoSaldo = Math.max((Number(p.precio_total) || 0) - nuevoTotalAbonado, 0);
-          const nuevoEstado = nuevoSaldo === 0 && p.estado !== 'CANCELADO' ? 'LIQUIDADO' : p.estado;
-
-          // Sync updated pedido totals with Supabase
-          if (isSupabaseConfigured) {
-            supabase
-              .from('pedidos')
-              .update({
-                anticipo_pagado: nuevoTotalAbonado,
-                saldo_pendiente: nuevoSaldo,
-                estado: nuevoEstado,
-              })
-              .eq('id', pedidoId)
-              .then(({ error }) => {
-                if (error) console.error('Error al actualizar totales de pedido en Supabase:', error);
-              });
-          }
-
-          return {
-            ...p,
-            abonos: currentAbonos,
-            anticipo_pagado: nuevoTotalAbonado,
-            saldo_pendiente: nuevoSaldo,
-            estado: nuevoEstado,
-          };
-        })
+      setPrendas((prev) =>
+        prev.map((p) => (p.id === updatedPrenda.id ? updatedPrenda : p))
       );
-    } catch (err: any) {
-      console.error('Error en registrar abono:', err);
-      throw err;
+    } catch (err) {
+      console.error('Error al actualizar prenda:', err);
+      setPrendas((prev) =>
+        prev.map((p) => (p.id === updatedPrenda.id ? updatedPrenda : p))
+      );
+    }
+  };
+
+  const handleEliminarPrenda = async (prendaId: string) => {
+    try {
+      const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
+      if (isSupabaseConfigured) {
+        await supabase.from('prendas').delete().eq('id', prendaId);
+      }
+      setPrendas((prev) => prev.filter((p) => p.id !== prendaId));
+    } catch (err) {
+      console.error('Error al eliminar prenda:', err);
+      setPrendas((prev) => prev.filter((p) => p.id !== prendaId));
     }
   };
 
@@ -372,126 +272,114 @@ export default function DashboardPage() {
   };
 
   const handleEliminarCompra = async (id: string) => {
-    try {
-      const { supabase, isSupabaseConfigured } = await import('@/lib/supabase/client');
-      if (isSupabaseConfigured) {
-        await supabase.from('compras').delete().eq('id', id);
-      }
-      setCompras((prev) => prev.filter((c) => c.id !== id));
-    } catch (err) {
-      setCompras((prev) => prev.filter((c) => c.id !== id));
-    }
+    setCompras((prev) => prev.filter((c) => c.id !== id));
   };
 
   const handleLogout = () => {
     sessionStorage.removeItem('so_dashboard_auth');
+    sessionStorage.removeItem('so_user_role');
     setIsAuthenticated(false);
   };
 
-  // Total active sales for net profit calculation
   const ventasTotales = useMemo(() => {
     return pedidos
       .filter((p) => p.estado !== 'CANCELADO')
       .reduce((acc, p) => acc + (Number(p.precio_total) || 0), 0);
   }, [pedidos]);
 
-  const stockDisponibleCount = useMemo(() => {
-    return prendas.filter((p) => p.estado === 'DISPONIBLE').length;
-  }, [prendas]);
-
-  // If checking authentication
   if (isAuthenticated === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAF0F2]">
-        <div className="w-8 h-8 border-4 border-[#F43F5E] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-[#FBF1F3]">
+        <div className="w-8 h-8 border-4 border-[#E84364] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  // If not authenticated, render the Passcode Gate
   if (!isAuthenticated) {
-    return <PasscodeGate onSuccess={() => setIsAuthenticated(true)} />;
+    return (
+      <PasscodeGate
+        onSuccess={(role) => {
+          setUserRole(role);
+          setIsAuthenticated(true);
+        }}
+      />
+    );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF0F2] text-[#1F2937] overflow-x-hidden w-full">
-      {/* Top Admin Bar */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-rose-200/70 shadow-xs">
-        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex h-14 sm:h-20 items-center justify-between">
-            {/* Brand / Logo */}
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <Link href="/dashboard" className="flex items-center gap-2 sm:gap-3 group min-w-0">
-                <div className="relative h-9 w-9 sm:h-12 sm:w-12 rounded-xl sm:rounded-2xl overflow-hidden border border-rose-200/70 shadow-xs bg-[#FFF1F2] flex-shrink-0 group-hover:scale-105 transition-transform duration-200">
+    <div className="min-h-screen flex flex-col bg-[#FBF1F3] text-[#1F2937]">
+      {/* Top Haute Administration Bar */}
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#F3D8DF] shadow-xs">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-8">
+          <div className="flex h-16 sm:h-20 items-center justify-between">
+            {/* Brand Logo & Role Badge */}
+            <div className="flex items-center gap-3">
+              <Link href="/dashboard" className="flex items-center gap-3 group">
+                <div className="relative h-11 w-11 rounded-lg overflow-hidden border border-[#F3D8DF] bg-white p-1 flex-shrink-0 group-hover:scale-105 transition-transform duration-200 shadow-2xs">
                   <Image
                     src="/logo.png"
-                    alt="SO Shopping Online Logo"
+                    alt="SO Shopping Online Atelier Logo"
                     fill
-                    className="object-cover"
+                    className="object-contain p-1"
                   />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h1 className="text-xs sm:text-base font-black text-[#1F2937] leading-tight truncate">
-                      SO <span className="text-[#F43F5E] font-serif italic">Shopping Online</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-sm sm:text-base font-serif font-bold text-[#1F2937] leading-tight">
+                      SO Atelier Suite
                     </h1>
-                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-[#FFF1F2] border border-[#FCE7F3] text-[#F43F5E] font-bold hidden sm:inline">
-                      Panel Boutique
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FBF1F3] border border-[#F3D8DF] text-[#E84364] font-semibold uppercase tracking-wider">
+                      {userRole === 'direccion' ? 'Dirección General' : 'Concierge & Ventas'}
                     </span>
                   </div>
-                  <p className="text-[9px] sm:text-[10px] text-[#6B7280] font-medium truncate">
-                    Angélica Melgar (+591 79010395)
+                  <p className="text-[10px] text-[#6B7280] font-sans">
+                    Operaciones & Logística White-Glove
                   </p>
                 </div>
               </Link>
 
               {/* Status pill */}
               <div
-                className={`hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold border ${
+                className={`hidden md:inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold border ${
                   isSupabaseConnected
-                    ? 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border-amber-200'
                 }`}
-                title={
-                  isSupabaseConnected
-                    ? 'Conectado a la base de datos Supabase en tiempo real'
-                    : 'Modo local activo'
-                }
               >
                 <div
                   className={`w-2 h-2 rounded-full ${
-                    isSupabaseConnected ? 'bg-[#4E9F76] animate-pulse' : 'bg-amber-500'
+                    isSupabaseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                   }`}
                 />
-                <span>{isSupabaseConnected ? 'Supabase Conectado' : 'Modo Demostración'}</span>
+                <span>{isSupabaseConnected ? 'Supabase Live' : 'Atelier Demo Mode'}</span>
               </div>
             </div>
 
             {/* Quick Actions & Navigation */}
-            <div className="flex items-center gap-1.5 sm:gap-2.5 flex-shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setIsPrendaModalOpen(true)}
-                className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl bg-gradient-to-r from-rose-500 to-pink-500 hover:from-rose-600 hover:to-pink-600 text-white text-[11px] sm:text-xs font-bold shadow-sm shadow-rose-200 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#1F2937] hover:bg-[#0F172A] text-white text-xs font-semibold uppercase tracking-wider shadow-xs transition-all active:scale-95"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Subir</span> Prenda
+                <Plus className="w-3.5 h-3.5 text-rose-300" />
+                <span className="hidden sm:inline">Nueva</span> Pieza
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsPedidoModalOpen(true)}
-                className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl border border-[#FCE7F3] bg-white hover:bg-[#FFF1F2] text-[#F43F5E] text-[11px] sm:text-xs font-bold shadow-xs transition-all"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-[#F3D8DF] bg-[#FFF8F8] hover:bg-[#FBF1F3] text-[#E84364] text-xs font-semibold uppercase tracking-wider shadow-2xs transition-all"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#F43F5E]" />
-                <span className="hidden sm:inline">Nuevo</span> Encargo
+                <Sparkles className="w-3.5 h-3.5 text-[#E84364]" />
+                <span className="hidden sm:inline">Bespoke</span> Pedido
               </button>
 
               <Link
                 href="/"
                 target="_blank"
-                className="p-1.5 sm:p-2 rounded-xl text-[#6B7280] hover:text-[#F43F5E] hover:bg-[#FFF1F2] transition-colors"
-                title="Ver Tienda Pública"
+                className="p-2 rounded-lg text-[#6B7280] hover:text-[#1F2937] hover:bg-[#FBF1F3] transition-colors"
+                title="Ver Boutique Pública"
               >
                 <ExternalLink className="w-4 h-4" />
               </Link>
@@ -499,7 +387,7 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                className="p-2 rounded-lg text-neutral-400 hover:text-red-600 hover:bg-red-50 transition-colors"
                 title="Cerrar Sesión"
               >
                 <LogOut className="w-4 h-4" />
@@ -507,84 +395,77 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Navigation Tabs: Individual Pill Buttons (2x2 Grid on Mobile, Flex Row on Desktop) */}
-          <div className="py-2.5 sm:py-3 mb-2 sm:mb-1">
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2.5 sm:gap-3 w-full sm:w-auto">
-              {/* Buton 1: Métricas */}
+          {/* Haute Administration Tabs Bar */}
+          <div className="py-2.5 overflow-x-auto no-scrollbar">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab('metricas')}
-                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === 'metricas'
-                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
-                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
+                    ? 'bg-[#1F2937] text-white shadow-xs'
+                    : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8]'
                 }`}
               >
-                <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
-                <span>Métricas</span>
+                <LayoutDashboard className="w-3.5 h-3.5 text-[#E84364]" />
+                <span>KPIs & Caja</span>
               </button>
 
-              {/* Buton 2: Stock Inmediato */}
               <button
-                onClick={() => setActiveTab('stock')}
-                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
-                  activeTab === 'stock'
-                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
-                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
+                onClick={() => setActiveTab('concierge')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'concierge'
+                    ? 'bg-[#1F2937] text-white shadow-xs'
+                    : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8]'
                 }`}
               >
-                <Package className="w-4 h-4 flex-shrink-0" />
-                <span>Stock Inmediato</span>
-                <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
-                    activeTab === 'stock'
-                      ? 'bg-white text-rose-600'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
-                  {stockDisponibleCount}
+                <MessageSquare className="w-3.5 h-3.5 text-[#E84364]" />
+                <span>Concierge & Alertas</span>
+                <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.2 rounded-full font-bold">
+                  {criticalAlerts.length}
                 </span>
               </button>
 
-              {/* Buton 3: Pedidos */}
               <button
                 onClick={() => setActiveTab('pedidos')}
-                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap ${
                   activeTab === 'pedidos'
-                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
-                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
+                    ? 'bg-[#1F2937] text-white shadow-xs'
+                    : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8]'
                 }`}
               >
-                <ShoppingBag className="w-4 h-4 flex-shrink-0" />
-                <span>Pedidos</span>
-                <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
-                    activeTab === 'pedidos'
-                      ? 'bg-white text-rose-600'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
+                <ShoppingBag className="w-3.5 h-3.5 text-[#E84364]" />
+                <span>Logística & Despacho</span>
+                <span className="text-[10px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 rounded-full font-bold">
                   {pedidos.length}
                 </span>
               </button>
 
-              {/* Buton 4: Compras */}
               <button
-                onClick={() => setActiveTab('compras')}
-                className={`px-4 py-2.5 rounded-2xl text-xs transition-all duration-200 active:scale-95 flex items-center justify-center gap-2 border ${
-                  activeTab === 'compras'
-                    ? 'bg-rose-500 text-white border-rose-500 shadow-md shadow-rose-200 font-bold'
-                    : 'bg-white text-slate-700 hover:bg-rose-50/50 border-slate-200/80 font-semibold shadow-sm hover:shadow-md'
+                onClick={() => setActiveTab('stock')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'stock'
+                    ? 'bg-[#1F2937] text-white shadow-xs'
+                    : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8]'
                 }`}
               >
-                <Receipt className="w-4 h-4 flex-shrink-0" />
-                <span>Compras</span>
-                <span
-                  className={`text-[11px] px-2 py-0.5 rounded-full font-mono font-bold flex-shrink-0 ${
-                    activeTab === 'compras'
-                      ? 'bg-white text-rose-600'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
+                <Package className="w-3.5 h-3.5 text-[#E84364]" />
+                <span>Catálogo de Atelier</span>
+                <span className="text-[10px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 rounded-full font-bold">
+                  {prendas.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('compras')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  activeTab === 'compras'
+                    ? 'bg-[#1F2937] text-white shadow-xs'
+                    : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8]'
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5 text-[#E84364]" />
+                <span>Telas & Compras</span>
+                <span className="text-[10px] bg-neutral-200 text-neutral-800 px-1.5 py-0.2 rounded-full font-bold">
                   {compras.length}
                 </span>
               </button>
@@ -593,19 +474,24 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Main Dashboard Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5 overflow-x-hidden">
-        {/* PESTAÑA 1: CAJA Y MÉTRICAS */}
+      {/* Main Operations Content */}
+      <main className="flex-1 max-w-[1440px] w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
+        {/* TAB 1: EXECUTIVE METRICS & REVENUE BREAKDOWN (SCREEN_4) */}
         {activeTab === 'metricas' && (
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-800">Resumen Financiero</h2>
+                <h2 className="text-xl font-serif font-bold text-[#1F2937]">
+                  Panel de Desempeño Ejecutivo
+                </h2>
+                <p className="text-xs text-[#6B7280]">
+                  Ventas netas, valor de ticket medio y evolución de ingresos de atelier
+                </p>
               </div>
               <button
                 onClick={loadData}
                 disabled={loadingData}
-                className="inline-flex items-center gap-1.5 text-xs text-slate-700 hover:text-[#F43F5E] bg-white px-3 py-1.5 rounded-xl border border-rose-100 shadow-xs hover:bg-rose-50 transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-[#1F2937] bg-white px-3 py-1.5 rounded-lg border border-[#F3D8DF] shadow-2xs hover:bg-[#FBF1F3] transition-colors"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
                 <span>Actualizar Datos</span>
@@ -616,7 +502,41 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* PESTAÑA 2: TIENDA / STOCK DISPONIBLE */}
+        {/* TAB 2: CONCIERGE STREAM & CRITICAL STOCK REPLENISHMENT (SCREEN_4) */}
+        {activeTab === 'concierge' && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-serif font-bold text-[#1F2937]">
+                  Concierge Live Stream & Salud de Inventario
+                </h2>
+                <p className="text-xs text-[#6B7280]">
+                  Monitoreo en tiempo real de interacciones VIP y reabastecimiento crítico
+                </p>
+              </div>
+            </div>
+
+            <ConciergeStream
+              events={conciergeEvents}
+              alerts={criticalAlerts}
+              onRestockClick={handleRestock}
+            />
+          </section>
+        )}
+
+        {/* TAB 3: BOUTIQUE LOGISTICS & ORDERS PIPELINE */}
+        {activeTab === 'pedidos' && (
+          <section className="space-y-4">
+            <PedidosTable
+              pedidos={pedidos}
+              onUpdateEstado={handleUpdateEstado}
+              onLiquidar={handleLiquidar}
+              onNuevoPedidoClick={() => setIsPedidoModalOpen(true)}
+            />
+          </section>
+        )}
+
+        {/* TAB 4: ATELIER CATALOG & STOCK MANAGEMENT */}
         {activeTab === 'stock' && (
           <section className="space-y-4">
             <StockSection
@@ -628,20 +548,7 @@ export default function DashboardPage() {
           </section>
         )}
 
-        {/* PESTAÑA 3: PEDIDOS POR ENCARGO Y DEUDAS */}
-        {activeTab === 'pedidos' && (
-          <section className="space-y-4">
-            <PedidosTable
-              pedidos={pedidos}
-              onUpdateEstado={handleUpdateEstado}
-              onLiquidar={handleLiquidar}
-              onRegistrarAbono={handleRegistrarAbono}
-              onNuevoPedidoClick={() => setIsPedidoModalOpen(true)}
-            />
-          </section>
-        )}
-
-        {/* PESTAÑA 4: COMPRAS E INVERSIÓN DE LOTES */}
+        {/* TAB 5: FABRIC PURCHASES & ATELIER COSTS */}
         {activeTab === 'compras' && (
           <section className="space-y-4">
             <ComprasSection
@@ -654,7 +561,7 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {/* MODAL: SUBIR PRENDA CON FOTO */}
+      {/* MODAL: SUBIR PRENDA CON FOTO A SUPABASE STORAGE */}
       <PrendaUploadModal
         isOpen={isPrendaModalOpen}
         onClose={() => setIsPrendaModalOpen(false)}
@@ -663,7 +570,7 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* MODAL: NUEVO PEDIDO / ENCARGO */}
+      {/* MODAL: REGISTRAR PEDIDO BESPOKE CON FOTO */}
       <NuevoPedidoModal
         isOpen={isPedidoModalOpen}
         prendas={prendas}

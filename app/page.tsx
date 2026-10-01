@@ -7,32 +7,37 @@ import { Prenda } from '@/types/database';
 import { INITIAL_PRENDAS } from '@/lib/demo-data';
 import { Navbar } from '@/components/Navbar';
 import { PrendaCard } from '@/components/PrendaCard';
-import { CustomBoutiqueOrderBanner } from '@/components/CustomSheinOrderBanner';
-import { TestimonialsSection } from '@/components/TestimonialsSection';
 import {
   Search,
-  ShoppingBag,
+  Sparkles,
+  ShieldCheck,
+  Package,
   Heart,
-  SlidersHorizontal,
-  X,
+  MessageCircle,
+  Clock,
+  ArrowRight,
+  Star,
+  CheckCircle2,
+  Compass,
+  Crown,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 
-type CategoriaKey = 'TODAS' | 'VESTIDOS' | 'BLUSAS' | 'CONJUNTOS' | 'PANTALONES' | 'ABRIGOS';
+type CategoriaKey = 'TODAS' | 'GALA' | 'SASTRERIA' | 'CONJUNTOS' | 'JOYERIA';
 
 interface CategoriaDef {
   id: CategoriaKey;
   label: string;
-  icon: string;
-  match: (name: string) => boolean;
+  match: (p: Prenda) => boolean;
 }
 
 const CATEGORIAS_CONFIG: CategoriaDef[] = [
-  { id: 'TODAS', label: 'Todas las Prendas', icon: '✨', match: () => true },
-  { id: 'VESTIDOS', label: 'Vestidos', icon: '👗', match: (n) => /vestid|dress/i.test(n) },
-  { id: 'BLUSAS', label: 'Tops & Camisas', icon: '👚', match: (n) => /blusa|top|camisa|remera|crop|polo/i.test(n) },
-  { id: 'CONJUNTOS', label: 'Conjuntos & Monos', icon: '🩱', match: (n) => /conjunto|set|mono|enterizo|pijama/i.test(n) },
-  { id: 'PANTALONES', label: 'Pantalones & Faldas', icon: '👖', match: (n) => /pantalon|jean|falda|short|legging/i.test(n) },
-  { id: 'ABRIGOS', label: 'Chaquetas & Abrigos', icon: '🧥', match: (n) => /chaqueta|cardigan|abrigo|sueter|sweater|saco/i.test(n) },
+  { id: 'TODAS', label: 'Todas las Piezas', match: () => true },
+  { id: 'GALA', label: 'Vestidos de Gala', match: (p) => p.categoria === 'Vestidos de Gala' || /vestid|gala|capa/i.test(p.nombre) },
+  { id: 'SASTRERIA', label: 'Sastrería & Tops', match: (p) => p.categoria === 'Sastrería & Tops' || /blusa|top|pantal|sastre/i.test(p.nombre) },
+  { id: 'CONJUNTOS', label: 'Conjuntos Alta Costura', match: (p) => p.categoria === 'Conjuntos Alta Costura' || /conjunto|blazer/i.test(p.nombre) },
+  { id: 'JOYERIA', label: 'Bolsos & Joyería', match: (p) => p.categoria === 'Bolsos & Joyería' || /bolso|joya|minaudi/i.test(p.nombre) },
 ];
 
 export default function TiendaPage() {
@@ -40,12 +45,11 @@ export default function TiendaPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoria, setSelectedCategoria] = useState<CategoriaKey>('TODAS');
-  const [selectedTalla, setSelectedTalla] = useState<string>('TODAS');
-  const [gridDensity, setGridDensity] = useState<2 | 3 | 4>(4);
+  const [newsletterEmail, setNewsletterEmail] = useState('');
+  const [newsletterSuccess, setNewsletterSuccess] = useState(false);
 
-  const whatsAppNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '59179010395';
+  const whatsAppNumber = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '12125558920';
 
-  // Load garments from Supabase if configured, otherwise use initial seed/demo data
   useEffect(() => {
     async function fetchPrendas() {
       try {
@@ -72,343 +76,419 @@ export default function TiendaPage() {
     fetchPrendas();
   }, []);
 
-  // Compute category counts
-  const categoryCounts = useMemo(() => {
-    const counts: Record<CategoriaKey, number> = {
-      TODAS: 0,
-      VESTIDOS: 0,
-      BLUSAS: 0,
-      CONJUNTOS: 0,
-      PANTALONES: 0,
-      ABRIGOS: 0,
-    };
-
-    const disponibles = prendas.filter((p) => p.estado === 'DISPONIBLE');
-    counts.TODAS = disponibles.length;
-
-    disponibles.forEach((p) => {
-      CATEGORIAS_CONFIG.forEach((cat) => {
-        if (cat.id !== 'TODAS' && cat.match(p.nombre)) {
-          counts[cat.id] = (counts[cat.id] || 0) + 1;
-        }
-      });
-    });
-
-    return counts;
-  }, [prendas]);
-
-  // Filtered garments (Only active DISPONIBLE items)
+  // Filtered garments
   const filteredPrendas = useMemo(() => {
-    return prendas
-      .filter((p) => p.estado === 'DISPONIBLE')
-      .filter((p) => {
-        // Category filter
-        if (selectedCategoria !== 'TODAS') {
-          const catDef = CATEGORIAS_CONFIG.find((c) => c.id === selectedCategoria);
-          if (catDef && !catDef.match(p.nombre)) {
-            return false;
-          }
-        }
+    return prendas.filter((p) => {
+      // Category filter
+      const activeCat = CATEGORIAS_CONFIG.find((c) => c.id === selectedCategoria);
+      if (activeCat && !activeCat.match(p)) return false;
 
-        // Size filter
-        if (selectedTalla !== 'TODAS') {
-          const sizesInPrenda = p.talla.toUpperCase().split(',').map((s) => s.trim());
-          if (!sizesInPrenda.includes(selectedTalla.toUpperCase())) {
-            return false;
-          }
-        }
+      // Search term
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      return (
+        p.nombre.toLowerCase().includes(term) ||
+        p.codigo_shein.toLowerCase().includes(term) ||
+        (p.categoria && p.categoria.toLowerCase().includes(term))
+      );
+    });
+  }, [prendas, selectedCategoria, searchTerm]);
 
-        // Search term
-        if (!searchTerm.trim()) return true;
-        const term = searchTerm.toLowerCase();
-        return (
-          p.nombre.toLowerCase().includes(term) ||
-          p.codigo_shein.toLowerCase().includes(term) ||
-          p.talla.toLowerCase().includes(term)
-        );
-      });
-  }, [prendas, selectedCategoria, selectedTalla, searchTerm]);
-
-  const tallasDisponibles = ['TODAS', 'XS', 'S', 'M', 'L', 'XL', 'Única'];
-
-  // Grid classes according to column density toggle (mobile-first 2 columns always)
-  const gridClasses = useMemo(() => {
-    switch (gridDensity) {
-      case 2:
-        return 'grid grid-cols-2 sm:grid-cols-2 gap-3 sm:gap-6';
-      case 3:
-        return 'grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6';
-      case 4:
-      default:
-        return 'grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6';
-    }
-  }, [gridDensity]);
-
-  const hasActiveFilters = selectedCategoria !== 'TODAS' || selectedTalla !== 'TODAS' || searchTerm.trim() !== '';
-
-  const resetFilters = () => {
-    setSearchTerm('');
-    setSelectedCategoria('TODAS');
-    setSelectedTalla('TODAS');
+  const handleNewsletter = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newsletterEmail) return;
+    setNewsletterSuccess(true);
+    setTimeout(() => {
+      setNewsletterEmail('');
+      setNewsletterSuccess(false);
+    }, 4000);
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF0F2] text-[#1F2937] overflow-x-hidden">
-      {/* 1. Header Superior Compacto & Elegante */}
+    <div className="min-h-screen flex flex-col bg-[#FBF1F3]">
+      {/* Top Editorial Navbar */}
       <Navbar whatsAppNumber={whatsAppNumber} />
 
-      {/* 2. Sub-Barra de Categorías Boutique (Sticky) */}
-      <div className="sticky top-14 sm:top-20 z-30 w-full bg-white/95 backdrop-blur-md border-b border-rose-200/70 shadow-xs">
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto no-scrollbar whitespace-nowrap">
-            {CATEGORIAS_CONFIG.map((cat) => {
-              const isSelected = selectedCategoria === cat.id;
-              const count = categoryCounts[cat.id] || 0;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedCategoria(cat.id)}
-                  className={`flex-shrink-0 text-xs font-bold uppercase tracking-wider transition-all duration-300 ease-out py-1 px-2.5 rounded-lg flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-[#FFF1F2] text-[#F43F5E] border border-rose-200 shadow-2xs'
-                      : 'text-[#6B7280] hover:text-[#1F2937] hover:bg-rose-50/50'
-                  }`}
+      {/* 1. HERO BANNER: FULL-BLEED EDITORIAL SHOWCASE (SCREEN_2) */}
+      <section className="relative overflow-hidden bg-white border-b border-[#F3D8DF]">
+        {/* Soft background ambient gradient */}
+        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-[#FFF8F8] rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-1/3 w-[500px] h-[500px] bg-[#FDE8ED]/50 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-12 sm:py-20 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            {/* Left Narrative Column */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FBF1F3] border border-[#F3D8DF] text-[11px] font-semibold tracking-[0.2em] uppercase text-[#E84364]">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Cápsula Atelier 2026 • Otoño - Invierno</span>
+              </div>
+
+              <h1 className="text-3xl sm:text-5xl lg:text-6xl font-serif font-bold text-[#1F2937] tracking-tight leading-[1.12]">
+                Poesía en Cada Costura & Silueta.
+              </h1>
+
+              <p className="text-sm sm:text-lg text-[#6B7280] leading-relaxed max-w-2xl font-light">
+                Una oda al patronaje clásico, la seda pura italiana y la confección a medida. Edición numerada de tan solo <strong className="text-[#1F2937] font-semibold">40 piezas por diseño</strong>, entregadas con protocolo de guante blanco y concierge privado en 24/48h.
+              </p>
+
+              {/* CTAs */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
+                <a
+                  href="#catalogo-section"
+                  className="px-6 py-3.5 rounded-lg bg-[#1F2937] hover:bg-[#0F172A] text-white font-semibold text-xs uppercase tracking-widest text-center transition-all shadow-sm hover:shadow-md active:scale-95 flex items-center justify-center gap-2"
                 >
-                  <span>{cat.icon}</span>
-                  <span>{cat.label}</span>
-                  {count > 0 && (
-                    <span className={`text-[10px] px-1.5 rounded-full font-mono ${isSelected ? 'bg-[#F43F5E] text-white' : 'bg-slate-100 text-[#6B7280]'}`}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                  <span>Explorar Cápsula</span>
+                  <ArrowRight className="w-4 h-4 text-rose-300" />
+                </a>
+
+                <a
+                  href={`https://wa.me/${whatsAppNumber.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(
+                    'Estimada Concierge de SO Shopping Online, me gustaría coordinar una cita de prueba de ajuste personalizada en atelier.'
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3.5 rounded-lg bg-white border border-[#F3D8DF] text-[#1F2937] hover:bg-[#FBF1F3] hover:text-[#E84364] font-semibold text-xs uppercase tracking-widest text-center transition-all shadow-2xs"
+                >
+                  Solicitar Cita de Concierge
+                </a>
+              </div>
+
+              {/* Guarantees Strip */}
+              <div className="pt-4 border-t border-[#F3D8DF]/70 grid grid-cols-3 gap-3 max-w-lg text-[11px] text-[#6B7280]">
+                <div>
+                  <span className="font-serif font-bold text-sm text-[#1F2937] block">40 Pzas</span>
+                  <span className="text-[10px] uppercase tracking-wider">Por Modelo</span>
+                </div>
+                <div>
+                  <span className="font-serif font-bold text-sm text-[#1F2937] block">24/48h</span>
+                  <span className="text-[10px] uppercase tracking-wider">Despacho VIP</span>
+                </div>
+                <div>
+                  <span className="font-serif font-bold text-sm text-[#1F2937] block">100% Seda</span>
+                  <span className="text-[10px] uppercase tracking-wider">& Fibras Puras</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Editorial Lookbook Image */}
+            <div className="lg:col-span-5 relative">
+              <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden shadow-elevated border border-[#F3D8DF] bg-[#FBF1F3]">
+                <Image
+                  src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1000&q=85"
+                  alt="Editorial Lookbook SO Shopping Online"
+                  fill
+                  priority
+                  className="object-cover object-center"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex flex-col justify-end p-6 text-white">
+                  <span className="text-[10px] font-sans uppercase tracking-[0.25em] text-rose-200">
+                    Lookbook No. 04
+                  </span>
+                  <h3 className="font-serif text-lg font-bold">
+                    Capa Imperial en Terciopelo de Seda
+                  </h3>
+                  <span className="text-xs text-neutral-300 font-mono mt-0.5">$1,450.00 USD</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 3. Filtros Rápidos, Buscador & Conmutador de Columnas */}
-      <div id="catalogo-section" className="max-w-[1440px] w-full mx-auto px-3 sm:px-8 pt-3 sm:pt-4 pb-2 flex flex-col md:flex-row items-center justify-between gap-3">
-        {/* Buscador y Tallas */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 w-full md:w-auto">
-          {/* Barra de Búsqueda Rápida: 100% de ancho en móvil con esquinas suaves */}
-          <div className="relative w-full sm:w-80">
+      {/* 2. PRODUCT SHOWCASE & CATEGORY FILTERS (SCREEN_2) */}
+      <section id="catalogo-section" className="max-w-[1440px] mx-auto px-4 sm:px-8 py-12 sm:py-16 w-full">
+        {/* Section Header */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-[#F3D8DF]">
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-semibold text-[#E84364] uppercase tracking-widest mb-1">
+              <Crown className="w-3.5 h-3.5" />
+              <span>Colección Exclusiva de Atelier</span>
+            </div>
+            <h2 className="text-2xl sm:text-4xl font-serif font-bold text-[#1F2937]">
+              Piezas Icónicas de la Temporada
+            </h2>
+          </div>
+
+          {/* Search bar */}
+          <div className="relative w-full md:w-72">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#6B7280]">
+              <Search className="w-4 h-4" />
+            </div>
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por nombre o código de prenda..."
-              className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-[#FCE7F3] rounded-xl focus:border-[#F43F5E] focus:ring-2 focus:ring-[#FFF1F2] outline-none tracking-wide placeholder:text-[#6B7280] text-[#1F2937] shadow-2xs transition-all"
+              placeholder="Buscar por silueta o SKU..."
+              className="w-full pl-9 pr-3 py-2 rounded-lg border border-[#F3D8DF] bg-white text-xs text-[#1F2937] placeholder:text-neutral-400 focus:border-[#1F2937] outline-none transition-all shadow-2xs"
             />
-            <Search className="w-4 h-4 text-[#F43F5E] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            {searchTerm && (
-              <button
-                onClick={() => setSearchTerm('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#6B7280] hover:text-[#1F2937]"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          {/* Chips de filtro rápido por tallas: deslizables horizontalmente con touch fluido */}
-          <div className="flex items-center overflow-x-auto no-scrollbar gap-2 py-2 px-1 w-full sm:w-auto">
-            <span className="text-[11px] font-bold text-[#6B7280] uppercase tracking-wider mr-1 flex-shrink-0 hidden sm:inline">
-              Talla:
-            </span>
-            {tallasDisponibles.map((t) => {
-              const isSelected = selectedTalla === t;
-              return (
-                <button
-                  key={t}
-                  onClick={() => setSelectedTalla(t)}
-                  className={`flex-shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold uppercase transition-all duration-300 ease-out active:scale-95 ${
-                    isSelected
-                      ? 'bg-[#F43F5E] text-white shadow-xs'
-                      : 'bg-white text-[#1F2937] border border-[#FCE7F3] hover:bg-[#FFF1F2] hover:text-[#F43F5E]'
-                  }`}
-                >
-                  {t}
-                </button>
-              );
-            })}
-            {hasActiveFilters && (
-              <button
-                onClick={resetFilters}
-                className="flex-shrink-0 text-[11px] font-bold text-[#F43F5E] hover:underline flex items-center gap-1 ml-1"
-              >
-                <X className="w-3 h-3" /> Limpiar
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Contador de Prendas & Selector de Columnas */}
-        <div className="flex items-center justify-between md:justify-end gap-5 w-full md:w-auto">
-          <div className="text-xs text-[#6B7280] uppercase tracking-wider font-semibold">
-            <strong className="text-[#1F2937] font-black">{filteredPrendas.length}</strong>{' '}
-            {filteredPrendas.length === 1 ? 'prenda disponible' : 'prendas disponibles'}
-          </div>
+        {/* Category Pills */}
+        <div className="mt-6 flex items-center gap-2 overflow-x-auto no-scrollbar pb-2">
+          {CATEGORIAS_CONFIG.map((cat) => (
+            <button
+              key={cat.id}
+              onClick={() => setSelectedCategoria(cat.id)}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold whitespace-nowrap uppercase tracking-wider transition-all ${
+                selectedCategoria === cat.id
+                  ? 'bg-[#1F2937] text-white shadow-xs'
+                  : 'bg-white text-[#1F2937] border border-[#F3D8DF] hover:bg-[#FFF8F8] hover:border-[#E84364]'
+              }`}
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-[#6B7280] uppercase tracking-wider hidden sm:inline">
-              Columnas:
-            </span>
-            <div className="flex items-center border border-[#FCE7F3] rounded-xl overflow-hidden bg-white shadow-2xs">
-              {[2, 3, 4].map((cols) => (
-                <button
-                  key={cols}
-                  onClick={() => setGridDensity(cols as 2 | 3 | 4)}
-                  className={`px-3 py-1 text-xs font-bold transition-all duration-300 ease-out ${
-                    gridDensity === cols
-                      ? 'bg-[#F43F5E] text-white shadow-2xs'
-                      : 'text-[#1F2937] hover:bg-[#FFF1F2] hover:text-[#F43F5E]'
-                  }`}
-                  title={`Ver en ${cols} columnas`}
-                >
-                  {cols}
-                </button>
+        {/* Garments Grid */}
+        <div className="mt-8">
+          {filteredPrendas.length === 0 ? (
+            <div className="bg-white rounded-xl p-12 text-center border border-[#F3D8DF] shadow-card max-w-md mx-auto">
+              <p className="font-serif text-lg font-bold text-[#1F2937]">No hay piezas con ese criterio</p>
+              <p className="text-xs text-[#6B7280] mt-1">Prueba seleccionando otra categoría o limpiando la búsqueda.</p>
+              <button
+                onClick={() => {
+                  setSelectedCategoria('TODAS');
+                  setSearchTerm('');
+                }}
+                className="mt-4 px-4 py-2 rounded-lg bg-[#1F2937] text-white text-xs font-semibold uppercase tracking-wider"
+              >
+                Ver Todas las Piezas
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredPrendas.map((prenda) => (
+                <PrendaCard
+                  key={prenda.id}
+                  prenda={prenda}
+                  whatsAppNumber={whatsAppNumber}
+                />
               ))}
             </div>
-          </div>
+          )}
         </div>
-      </div>
+      </section>
 
-      {/* 4. Cuadrícula de Prendas (Comienza Inmediatamente) */}
-      <main className="flex-1 max-w-[1440px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6">
-        {filteredPrendas.length === 0 ? (
-          <div className="bg-white rounded-3xl p-16 text-center border border-[#FCE7F3] shadow-sm max-w-lg mx-auto my-8">
-            <ShoppingBag className="w-12 h-12 text-[#F43F5E]/60 mx-auto mb-3" />
-            <h3 className="text-base font-bold uppercase tracking-wider text-[#1F2937]">
-              No encontramos prendas disponibles
-            </h3>
-            <p className="text-xs text-[#6B7280] mt-1 max-w-sm mx-auto leading-relaxed">
-              Prueba cambiando la categoría o la talla seleccionada, o consúltanos por WhatsApp para pedir tu prenda por encargo.
-            </p>
-            <button
-              onClick={resetFilters}
-              className="mt-6 px-6 py-2.5 bg-[#F43F5E] text-white text-xs font-bold uppercase tracking-wider rounded-xl hover:bg-rose-600 active:scale-95 transition-all duration-300 ease-out shadow-sm"
-            >
-              Ver Todo el Stock
-            </button>
-          </div>
-        ) : (
-          <div className={gridClasses}>
-            {filteredPrendas.map((prenda) => (
-              <PrendaCard
-                key={prenda.id}
-                prenda={prenda}
-                whatsAppNumber={whatsAppNumber}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* 5. Banner de Encargos Personalizados Boutique */}
-        <CustomBoutiqueOrderBanner whatsAppNumber={whatsAppNumber} />
-
-        {/* 6. Guía en 3 Pasos con Paleta Rose Gold */}
-        <section className="my-10 sm:my-20 bg-white rounded-3xl p-5 sm:p-12 border border-[#FCE7F3] shadow-sm">
-          <div className="text-center max-w-xl mx-auto mb-8 sm:mb-10">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FFF1F2] text-[#F43F5E] text-[10px] font-bold uppercase tracking-wider mb-2 border border-[#FCE7F3] rounded-full">
-              <Heart className="w-3 h-3 fill-[#F43F5E] text-[#F43F5E]" />
-              <span>COMPRAS SEGURAS & CONFIABLES</span>
-            </div>
-            <h2 className="text-xl sm:text-3xl font-black uppercase text-[#1F2937] tracking-tight">
-              ¿CÓMO APARTAR EN 3 PASOS?
+      {/* 3. ATELIER TRUST PILLARS (LUXURY EXPERIENCE GUARANTEES - SCREEN_2) */}
+      <section id="atelier-pillars" className="bg-white border-y border-[#F3D8DF] py-16 sm:py-20">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-12">
+            <span className="text-[11px] font-semibold text-[#E84364] uppercase tracking-widest">
+              Hospitalidad Haute Couture
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#1F2937] mt-1">
+              Garantías de la Experiencia Atelier
             </h2>
-            <p className="text-[11px] sm:text-xs text-[#6B7280] mt-1.5 tracking-wider uppercase font-semibold">
-              Coordinación directa por WhatsApp con Angélica Melgar
+            <p className="text-xs sm:text-sm text-[#6B7280] mt-2">
+              Cada pedido refleja la excelencia y el trato exclusivo de las casas de alta costura europeas.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-            <div className="p-5 sm:p-7 bg-white rounded-2xl border border-rose-200/70 shadow-md hover:shadow-lg flex flex-col items-start transition-all duration-300 ease-out">
-              <span className="text-xl sm:text-2xl font-black text-[#F43F5E] mb-2 font-mono">01</span>
-              <h3 className="font-bold text-[#1F2937] text-xs sm:text-sm uppercase tracking-wider">
-                Elige tu Prenda Favorita
-              </h3>
-              <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
-                Explora el catálogo en stock con precios en Bolivianos (Bs) y selecciona tu talla deseada.
-              </p>
-            </div>
-
-            <div className="p-5 sm:p-7 bg-white rounded-2xl border border-rose-200/70 shadow-md hover:shadow-lg flex flex-col items-start transition-all duration-300 ease-out">
-              <span className="text-xl sm:text-2xl font-black text-[#F43F5E] mb-2 font-mono">02</span>
-              <h3 className="font-bold text-[#1F2937] text-xs sm:text-sm uppercase tracking-wider">
-                Escribe a WhatsApp
-              </h3>
-              <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
-                Toca el botón verde para abrir el chat con Angélica Melgar (+591 79010395) con los datos y la foto listos.
-              </p>
-            </div>
-
-            <div className="p-5 sm:p-7 bg-white rounded-2xl border border-rose-200/70 shadow-md hover:shadow-lg flex flex-col items-start transition-all duration-300 ease-out">
-              <span className="text-xl sm:text-2xl font-black text-[#F43F5E] mb-2 font-mono">03</span>
-              <h3 className="font-bold text-[#1F2937] text-xs sm:text-sm uppercase tracking-wider">
-                Aparta y Recibe
-              </h3>
-              <p className="text-xs text-[#6B7280] mt-1.5 leading-relaxed">
-                Abona tu anticipo de 100 Bs para apartar y cancela el saldo restante al momento de la entrega en Santa Cruz o Bolivia.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* 7. Opiniones de Clientas Reales */}
-        <TestimonialsSection />
-      </main>
-
-      {/* 8. Footer Boutique */}
-      <footer className="mt-auto border-t border-rose-200/70 bg-white py-8 sm:py-10 shadow-sm">
-        <div className="max-w-[1440px] mx-auto px-3 sm:px-8">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-8 border-b border-rose-100">
-            {/* Brand Logo & Description */}
-            <div className="flex items-center gap-3">
-              <div className="relative h-11 w-11 rounded-xl overflow-hidden border border-rose-200/70 bg-[#FAF0F2] flex-shrink-0">
-                <Image
-                  src="/logo.png"
-                  alt="SO Shopping Online Logo"
-                  fill
-                  className="object-contain p-1"
-                />
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Pillar 1 */}
+            <div className="p-6 rounded-xl border border-[#F3D8DF] bg-[#FFF8F8] flex flex-col justify-between">
               <div>
-                <h4 className="text-base font-black text-[#1F2937] uppercase tracking-tight">
-                  SO SHOPPING ONLINE
-                </h4>
-                <p className="text-xs text-[#6B7280] font-semibold uppercase tracking-wider">
-                  Boutique Femenina • Angélica Melgar (+591 79010395)
+                <div className="w-10 h-10 rounded-lg bg-[#FBF1F3] text-[#E84364] flex items-center justify-center mb-4">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <h3 className="font-serif font-bold text-base text-[#1F2937]">Confección Artesanal</h3>
+                <p className="text-xs text-[#6B7280] mt-2 leading-relaxed">
+                  Confección manual por maestras costureras en sedas puras de Como y linos italianos con acabados de alta sastrería.
                 </p>
               </div>
+              <span className="text-[10px] uppercase tracking-wider text-[#E84364] font-semibold mt-4 block">
+                Artesanía Certificada
+              </span>
             </div>
 
-            {/* Delivery cities badges */}
-            <div className="flex flex-wrap items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-wider text-[#1F2937]">
-              <span className="bg-rose-50/70 px-3 py-1 rounded-full border border-rose-200/60">SANTA CRUZ</span>
-              <span className="bg-rose-50/70 px-3 py-1 rounded-full border border-rose-200/60">COCHABAMBA</span>
-              <span className="bg-rose-50/70 px-3 py-1 rounded-full border border-rose-200/60">LA PAZ</span>
-              <span className="bg-rose-50/70 px-3 py-1 rounded-full border border-rose-200/60">TARIJA</span>
-              <span className="bg-[#FFF1F2] text-[#F43F5E] px-3 py-1 rounded-full border border-rose-200/60">TODA BOLIVIA 🇧🇴</span>
+            {/* Pillar 2 */}
+            <div className="p-6 rounded-xl border border-[#F3D8DF] bg-[#FFF8F8] flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-[#FBF1F3] text-[#E84364] flex items-center justify-center mb-4">
+                  <Clock className="w-5 h-5" />
+                </div>
+                <h3 className="font-serif font-bold text-base text-[#1F2937]">Concierge Privado 24/7</h3>
+                <p className="text-xs text-[#6B7280] mt-2 leading-relaxed">
+                  Asesoría de estilismo personal para galas benéficas y coordinación de citas de fitting presencial en suite privada.
+                </p>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-[#E84364] font-semibold mt-4 block">
+                Atención Directa VIP
+              </span>
             </div>
 
-            {/* Admin Link */}
+            {/* Pillar 3 */}
+            <div className="p-6 rounded-xl border border-[#F3D8DF] bg-[#FFF8F8] flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-[#FBF1F3] text-[#E84364] flex items-center justify-center mb-4">
+                  <Package className="w-5 h-5" />
+                </div>
+                <h3 className="font-serif font-bold text-base text-[#1F2937]">Packaging Perfumado</h3>
+                <p className="text-xs text-[#6B7280] mt-2 leading-relaxed">
+                  Caja rígida de coleccionista forrada en lino marfil con papel de seda aromatizado con peonía silvestre y lacre floral.
+                </p>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-[#E84364] font-semibold mt-4 block">
+                Unboxing Sensorial
+              </span>
+            </div>
+
+            {/* Pillar 4 */}
+            <div className="p-6 rounded-xl border border-[#F3D8DF] bg-[#FFF8F8] flex flex-col justify-between">
+              <div>
+                <div className="w-10 h-10 rounded-lg bg-[#FBF1F3] text-[#E84364] flex items-center justify-center mb-4">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <h3 className="font-serif font-bold text-base text-[#1F2937]">Garantía & Ajustes 30 Días</h3>
+                <p className="text-xs text-[#6B7280] mt-2 leading-relaxed">
+                  Devoluciones sin fricción en 30 días y servicio de ajuste de dobladillos o pinzas de cortesía en nuestro taller.
+                </p>
+              </div>
+              <span className="text-[10px] uppercase tracking-wider text-[#E84364] font-semibold mt-4 block">
+                Ajuste a Medida
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 4. INTERACTIVE LOOKBOOK & VIP TESTIMONIALS (SCREEN_2) */}
+      <section id="lookbook-section" className="max-w-[1440px] mx-auto px-4 sm:px-8 py-16 sm:py-20 w-full">
+        <div className="text-center max-w-xl mx-auto mb-12">
+          <span className="text-[11px] font-semibold text-[#E84364] uppercase tracking-widest">
+            Patronas & Coleccionistas VIP
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-serif font-bold text-[#1F2937] mt-1">
+            Testimonios del Círculo Privado
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="p-6 rounded-xl bg-white border border-[#F3D8DF] shadow-card flex flex-col justify-between">
             <div>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#1F2937] bg-white border border-rose-200/70 hover:bg-[#FFF1F2] hover:text-[#F43F5E] rounded-xl active:scale-95 transition-all duration-300 ease-out shadow-xs"
-              >
-                <span>Acceso Administrativo</span>
-              </Link>
+              <div className="flex items-center gap-1 text-amber-500 mb-3">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+              <p className="text-xs text-[#6B7280] italic leading-relaxed">
+                "La caída del vestido de seda dupioni es una escultura viva. El empaque aromático y el trato personalizado de Marcella en concierge redefinieron mi experiencia de compra en línea."
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-[#F3D8DF]/60 flex items-center justify-between">
+              <div>
+                <h4 className="font-serif font-bold text-xs text-[#1F2937]">Valentina Cantú</h4>
+                <span className="text-[10px] text-[#6B7280]">VIP Private Collector (New York)</span>
+              </div>
+              <span className="text-[10px] font-serif text-[#E84364] font-bold">Diamante</span>
             </div>
           </div>
 
-          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#6B7280] uppercase tracking-wider font-semibold">
-            <p>© {new Date().getFullYear()} SO SHOPPING ONLINE • TODOS LOS DERECHOS RESERVADOS.</p>
-            <p className="text-[#1F2937] flex items-center gap-1 font-bold">
-              HECHO CON <Heart className="w-3.5 h-3.5 fill-[#F43F5E] text-[#F43F5E]" /> PARA ANGÉLICA MELGAR
+          <div className="p-6 rounded-xl bg-white border border-[#F3D8DF] shadow-card flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1 text-amber-500 mb-3">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+              <p className="text-xs text-[#6B7280] italic leading-relaxed">
+                "El conjunto de blazer bar y falda tableada posee una arquitectura impecable. Es confort contemporáneo con la seriedad de una casa de costura parisina."
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-[#F3D8DF]/60 flex items-center justify-between">
+              <div>
+                <h4 className="font-serif font-bold text-xs text-[#1F2937]">Carolina Herrera de la T.</h4>
+                <span className="text-[10px] text-[#6B7280]">Clienta de Atelier (Madrid)</span>
+              </div>
+              <span className="text-[10px] font-serif text-[#E84364] font-bold">Diamante</span>
+            </div>
+          </div>
+
+          <div className="p-6 rounded-xl bg-white border border-[#F3D8DF] shadow-card flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-1 text-amber-500 mb-3">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+              <p className="text-xs text-[#6B7280] italic leading-relaxed">
+                "Excelente coordinación en el despacho express con guante blanco. La atención directa por WhatsApp para confirmar medidas hizo toda la diferencia."
+              </p>
+            </div>
+            <div className="mt-6 pt-3 border-t border-[#F3D8DF]/60 flex items-center justify-between">
+              <div>
+                <h4 className="font-serif font-bold text-xs text-[#1F2937]">Beatrice de la Riva</h4>
+                <span className="text-[10px] text-[#6B7280]">Patrona de Alta Moda (Ciudad de México)</span>
+              </div>
+              <span className="text-[10px] font-serif text-[#1F2937] font-bold">Platinum</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. PRIVATE CIRCLE INVITATION BANNER (SCREEN_2) */}
+      <section id="circulo-privado" className="bg-[#1F2937] text-white py-16">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-8">
+          <div className="max-w-2xl mx-auto text-center space-y-4">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-widest text-rose-300">
+              <Sparkles className="w-3 h-3 text-[#E84364]" />
+              <span>Membresía Exclusiva por Invitación</span>
+            </div>
+
+            <h2 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight">
+              Únete al Círculo Privado de SO Atelier
+            </h2>
+
+            <p className="text-xs sm:text-sm text-neutral-300 leading-relaxed font-light">
+              Recibe acceso prioritario de 48 horas a las nuevas colecciones cápsula, invitaciones a trunk shows en París y Madrid, y un privilegio de cortesía del 15% en tu primera adquisición.
             </p>
+
+            <form onSubmit={handleNewsletter} className="pt-2 flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
+              <input
+                type="email"
+                required
+                value={newsletterEmail}
+                onChange={(e) => setNewsletterEmail(e.target.value)}
+                placeholder="Ingresa tu correo VIP personal..."
+                className="px-4 py-3 rounded-lg bg-white/10 border border-white/20 text-white placeholder:text-neutral-400 text-xs outline-none focus:border-rose-400 flex-1"
+              />
+              <button
+                type="submit"
+                className="px-6 py-3 rounded-lg bg-[#E84364] hover:bg-[#D63353] text-white text-xs font-semibold uppercase tracking-wider transition-all"
+              >
+                Solicitar Acceso
+              </button>
+            </form>
+
+            {newsletterSuccess && (
+              <p className="text-xs text-rose-300 font-medium">
+                ✨ Solicitud registrada. Recibirás tu invitación privada por correo de cortesía.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* GLOBAL FOOTER */}
+      <footer className="bg-white border-t border-[#F3D8DF] py-10">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#6B7280]">
+          <div className="flex items-center gap-2">
+            <span className="font-serif font-bold text-sm text-[#1F2937]">SO Shopping Online</span>
+            <span>•</span>
+            <span>Haute Couture & Atelier Suite © {new Date().getFullYear()}</span>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <span>Atelier Central: Madrid • París • New York</span>
+            <Link
+              href="/dashboard"
+              className="font-semibold text-[#1F2937] hover:text-[#E84364] flex items-center gap-1"
+            >
+              Suite Administrativa →
+            </Link>
           </div>
         </div>
       </footer>

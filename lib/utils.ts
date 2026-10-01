@@ -1,13 +1,21 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Pedido, PedidoEstado, Prenda } from '@/types/database';
+import { Pedido, PedidoEstado, Prenda, VipTier } from '@/types/database';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function formatCurrency(amount: number | null | undefined): string {
+export function formatCurrency(amount: number | null | undefined, currency: 'USD' | 'BOB' = 'USD'): string {
   const val = Number(amount) || 0;
+  if (currency === 'USD') {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: val % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(val);
+  }
   const formatted = new Intl.NumberFormat('es-BO', {
     minimumFractionDigits: val % 1 === 0 ? 0 : 2,
     maximumFractionDigits: 2,
@@ -25,7 +33,7 @@ export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return '-';
   try {
     const d = new Date(dateString);
-    return new Intl.DateTimeFormat('es-BO', {
+    return new Intl.DateTimeFormat('es-ES', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -41,7 +49,7 @@ export function formatDateOnly(dateString: string | null | undefined): string {
   if (!dateString) return '-';
   try {
     const d = new Date(dateString);
-    return new Intl.DateTimeFormat('es-BO', {
+    return new Intl.DateTimeFormat('es-ES', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
@@ -51,6 +59,27 @@ export function formatDateOnly(dateString: string | null | undefined): string {
   }
 }
 
+export const VIP_TIERS_CONFIG: Record<
+  VipTier,
+  { label: string; badgeClass: string; icon: string }
+> = {
+  Diamante: {
+    label: 'VIP Diamante',
+    badgeClass: 'bg-rose-50 text-[#E84364] border-rose-200 font-semibold',
+    icon: '💎',
+  },
+  Platinum: {
+    label: 'VIP Platinum',
+    badgeClass: 'bg-slate-100 text-slate-800 border-slate-300 font-semibold',
+    icon: '✨',
+  },
+  Oro: {
+    label: 'VIP Oro',
+    badgeClass: 'bg-amber-50 text-amber-800 border-amber-300 font-semibold',
+    icon: '👑',
+  },
+};
+
 export const ESTADOS_PEDIDO_CONFIG: Record<
   PedidoEstado,
   { label: string; badgeClass: string; description: string }
@@ -58,113 +87,64 @@ export const ESTADOS_PEDIDO_CONFIG: Record<
   POR_CONFIRMAR: {
     label: 'Por Confirmar',
     badgeClass: 'bg-[#FEF3C7] text-[#92400E] border-[#FDE68A]',
-    description: 'Cliente solicitó apartar pero falta verificar pago de anticipo',
+    description: 'Solicitud VIP recibida, pendiente de confirmación de reserva',
   },
   APARTADO: {
-    label: 'Apartado',
-    badgeClass: 'bg-[#E0F2FE] text-[#075985] border-[#BAE6FD]',
-    description: 'Anticipo recibido, listo para incluir en pedido de mercadería',
+    label: 'En Atelier / Reservado',
+    badgeClass: 'bg-[#EFF6FF] text-[#1E40AF] border-[#BFDBFE]',
+    description: 'Anticipo recibido, asignada a taller para preparación',
   },
   EN_TRANSITO: {
-    label: 'En Tránsito',
-    badgeClass: 'bg-[#E0F2FE] text-[#075985] border-[#BAE6FD]',
-    description: 'Mercadería en tránsito hacia entrega',
+    label: 'Courier VIP en Ruta',
+    badgeClass: 'bg-[#F3E8FF] text-[#6B21A8] border-[#E9D5FF]',
+    description: 'En despacho con mensajería de guante blanco',
   },
   LISTO_ENTREGA: {
-    label: 'Listo para Entrega',
-    badgeClass: 'bg-[#D1FAE5] text-[#065F46] border-[#A7F3D0]',
-    description: 'Prenda recibida, lista para cobrar contra entrega',
+    label: 'Listo en Boutique',
+    badgeClass: 'bg-[#DCFCE7] text-[#166534] border-[#BBF7D0]',
+    description: 'Prenda lista para entrega privada o fitting presencial',
   },
   LIQUIDADO: {
-    label: 'Liquidado',
-    badgeClass: 'bg-[#F3E8FF] text-[#6B21A8] border-[#E9D5FF]',
-    description: 'Entregado y 100% cobrado. Foto eliminada de almacenamiento.',
+    label: 'Entregado & Liquidado',
+    badgeClass: 'bg-[#F3F4F6] text-[#374151] border-[#E5E7EB]',
+    description: '100% cobrado y entregado a la patrona VIP',
   },
   CANCELADO: {
     label: 'Cancelado',
-    badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
-    description: 'Pedido cancelado o devuelto',
+    badgeClass: 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]',
+    description: 'Pedido anulado por el cliente',
   },
 };
 
 export function buildWhatsAppReservationLink(
   prenda: Prenda,
-  phoneNumber: string = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '59179010395',
-  tallaSeleccionada?: string
+  phoneNumber: string = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '59179010395'
 ): string {
-  const cleanPhone = (phoneNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || '59179010395').replace(/[^0-9]/g, '') || '59179010395';
-  const talla = tallaSeleccionada || prenda.talla || 'Única';
-  const precioTotal = Number(prenda.precio_total) || 0;
-  const precioReserva = Number(prenda.precio_reserva) || 100;
-  const saldoContraEntrega = Math.max(precioTotal - precioReserva, 0);
+  const cleanPhone = phoneNumber.replace(/[^0-9]/g, '');
 
-  const rawMessage =
-    `¡Hola Angélica! Me interesa esta prenda de SO Shopping Online:\n\n` +
-    `👗 Prenda: ${prenda.nombre}\n` +
-    `🏷️ Código de Referencia: ${prenda.codigo_shein || 'N/A'}\n` +
-    `📏 Talla: ${talla}\n` +
-    `💰 Precio Total: ${precioTotal} Bs\n` +
-    `💵 Reserva: ${precioReserva} Bs (Saldo contra entrega: ${saldoContraEntrega} Bs)\n\n` +
-    (prenda.url_foto ? `📸 Foto: ${prenda.url_foto}\n\n` : '') +
-    `¿Sigue disponible para coordinar la reserva?`;
+  const message = [
+    '✨ *SOLICITUD DE CONCIERGE PRIVADO | SO ATELIER* ✨',
+    '',
+    'Estimada Concierge, me gustaría consultar la disponibilidad y apartar la siguiente pieza exclusiva:',
+    '',
+    `👗 *Pieza de Alta Costura:* ${prenda.nombre}`,
+    `🏷️ *Código Atelier:* ${prenda.codigo_shein}`,
+    `📏 *Tallas solicitadas:* ${prenda.talla}`,
+    `💎 *Inversión Total:* ${formatCurrency(prenda.precio_total)}`,
+    `💳 *Reserva Atelier (50%):* ${formatCurrency(prenda.precio_reserva)}`,
+    prenda.categoria ? `🪡 *Categoría:* ${prenda.categoria}` : '',
+    prenda.url_foto ? `📸 *Lookbook:* ${prenda.url_foto}` : '',
+    '',
+    '--------------------------------------',
+    'Agradezco coordinar mi prueba de ajuste personalizada o despacho exclusivo. ¡Gracias! ✨',
+  ]
+    .filter(Boolean)
+    .join('\n');
 
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(rawMessage)}`;
+  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
 }
 
-export interface SizeAvailability {
-  size: string;
-  qty: number | null;
-  isAvailable: boolean;
-}
-
-export function parsePrendaSizes(prenda: Prenda): SizeAvailability[] {
-  // 1. Si existe desglose_tallas en formato objeto
-  if (prenda.desglose_tallas && typeof prenda.desglose_tallas === 'object') {
-    const entries = Object.entries(prenda.desglose_tallas);
-    if (entries.length > 0) {
-      return entries.map(([size, qty]) => {
-        const numericQty = Number(qty) || 0;
-        return {
-          size: size.trim(),
-          qty: numericQty,
-          isAvailable: numericQty > 0,
-        };
-      });
-    }
-  }
-
-  // 2. Si sólo tenemos la cadena talla (ej. "S (3), M (2)" o "S, M, L")
-  if (!prenda.talla || !prenda.talla.trim()) {
-    return [{ size: 'Única', qty: null, isAvailable: true }];
-  }
-
-  const parts = prenda.talla.split(',').map((p) => p.trim()).filter(Boolean);
-  if (parts.length === 0) {
-    return [{ size: 'Única', qty: null, isAvailable: true }];
-  }
-
-  return parts.map((part) => {
-    // Buscar patrón como "S (3)" o "S (3 disp.)" o "S (3 disp)"
-    const match = part.match(/^(.+?)\s*\(\s*(\d+)(?:\s*disp\.?)?\s*\)$/i);
-    if (match) {
-      const size = match[1].trim();
-      const qty = parseInt(match[2], 10);
-      return {
-        size,
-        qty,
-        isAvailable: qty > 0,
-      };
-    }
-    // Formato simple sin número explícito: "S"
-    return {
-      size: part,
-      qty: null,
-      isAvailable: true,
-    };
-  });
-}
-
-export function exportPedidosToCSV(pedidos: Pedido[], filename = 'pedidos_so_boutique.csv'): void {
+export function exportPedidosToCSV(pedidos: Pedido[], filename = 'so_atelier_pedidos_vip.csv'): void {
   if (!pedidos || pedidos.length === 0) {
     alert('No hay pedidos para exportar.');
     return;
@@ -172,55 +152,41 @@ export function exportPedidosToCSV(pedidos: Pedido[], filename = 'pedidos_so_bou
 
   const headers = [
     'ID Pedido',
-    'Cliente',
-    'Teléfono',
-    'Prenda',
-    'Código / Referencia',
+    'Nivel VIP',
+    'Cliente VIP',
+    'Celular / WhatsApp',
+    'Prenda Atelier',
+    'Código SKU',
     'Talla',
-    'Precio Total (Bs)',
-    'Anticipo Pagado (Bs)',
-    'Saldo Pendiente (Bs)',
+    'Precio Total (USD)',
+    'Anticipo Pagado (USD)',
+    'Saldo Pendiente (USD)',
     'Estado',
+    'Courier Logistics',
     'Fecha Pedido',
-    'Notas',
+    'Notas de Estilismo',
   ];
 
-  // Helper para escapar celdas y envolver en comillas dobles
-  const escapeCell = (val: string | number | null | undefined): string => {
-    if (val === null || val === undefined) return '""';
-    // Escapar comillas dobles duplicándolas y sanitizar saltos de línea para mantener 1 fila por registro
-    const str = String(val).replace(/"/g, '""').replace(/\r?\n/g, ' ');
-    return `"${str}"`;
-  };
-
-  const headerLine = headers.map(escapeCell).join(';');
-
   const rows = pedidos.map((p) => {
-    const total = Number(p.precio_total) || 0;
-    const anticipo = Number(p.anticipo_pagado) || 0;
-    const saldo = Number(p.saldo_pendiente) ?? Math.max(total - anticipo, 0);
-    const estadoNombre = ESTADOS_PEDIDO_CONFIG[p.estado]?.label || p.estado;
-
     return [
-      escapeCell(p.id),
-      escapeCell(p.cliente_nombre || ''),
-      escapeCell(p.cliente_telefono || ''),
-      escapeCell(p.prenda?.nombre || 'Sin prenda asignada'),
-      escapeCell(p.prenda?.codigo_shein || ''),
-      escapeCell(p.prenda?.talla || ''),
-      escapeCell(total.toFixed(2)),
-      escapeCell(anticipo.toFixed(2)),
-      escapeCell(saldo.toFixed(2)),
-      escapeCell(estadoNombre),
-      escapeCell(formatDate(p.fecha_pedido)),
-      escapeCell(p.notas || ''),
-    ].join(';');
+      `"${p.id}"`,
+      `"${p.vip_tier || 'Oro'}"`,
+      `"${(p.cliente_nombre || '').replace(/"/g, '""')}"`,
+      `"${(p.cliente_telefono || '').replace(/"/g, '""')}"`,
+      `"${(p.prenda?.nombre || 'Pieza Bespoke').replace(/"/g, '""')}"`,
+      `"${(p.prenda?.codigo_shein || '').replace(/"/g, '""')}"`,
+      `"${(p.prenda?.talla || '').replace(/"/g, '""')}"`,
+      p.precio_total.toFixed(2),
+      p.anticipo_pagado.toFixed(2),
+      p.saldo_pendiente.toFixed(2),
+      `"${p.estado}"`,
+      `"${p.courier_status || 'En Atelier'}"`,
+      `"${formatDate(p.fecha_pedido)}"`,
+      `"${(p.notas || '').replace(/"/g, '""')}"`,
+    ];
   });
 
-  // sep=;\r\n indica a Microsoft Excel que use punto y coma como delimitador de columnas
-  const csvContent = 'sep=;\r\n' + headerLine + '\r\n' + rows.join('\r\n');
-
-  // \uFEFF antepone el Byte Order Mark (BOM) UTF-8 para visualización perfecta de tildes y caracteres en español
+  const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
   const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');

@@ -1,27 +1,31 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import Image from 'next/image';
 import { Prenda } from '@/types/database';
-import { buildWhatsAppReservationLink, formatCurrency, parsePrendaSizes } from '@/lib/utils';
-import { MessageCircle, Check, Tag, ShieldCheck, Heart, ImageOff } from 'lucide-react';
+import { buildWhatsAppReservationLink, formatCurrency } from '@/lib/utils';
+import { MessageCircle, Check, Tag, ShieldCheck, Heart, ImageOff, Sparkles } from 'lucide-react';
 
 interface PrendaCardProps {
   prenda: Prenda;
   whatsAppNumber?: string;
+  onQuickAdd?: (prenda: Prenda, size: string) => void;
 }
 
-export function PrendaCard({ prenda, whatsAppNumber }: PrendaCardProps) {
+export function PrendaCard({ prenda, whatsAppNumber, onQuickAdd }: PrendaCardProps) {
   const [copied, setCopied] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
-  const parsedSizes = useMemo(() => parsePrendaSizes(prenda), [prenda]);
-  const defaultSize = parsedSizes.find((s) => s.isAvailable)?.size || parsedSizes[0]?.size || 'Única';
-  const [selectedTalla, setSelectedTalla] = useState<string>(defaultSize);
+  // Available sizes
+  const sizesList = prenda.talla ? prenda.talla.split(',').map((s) => s.trim()) : ['Talla Única'];
+  const [selectedTalla, setSelectedTalla] = useState<string>(sizesList[0] || 'Talla Única');
 
-  const reservaMonto = prenda.precio_reserva || 100;
-  const saldoContraEntrega = Math.max(prenda.precio_total - reservaMonto, 0);
+  // Swatches
+  const swatches = prenda.swatches || ['#1F2937', '#E84364', '#F5E4E8'];
+  const [selectedSwatch, setSelectedSwatch] = useState<number>(0);
+
+  const reservaMonto = prenda.precio_reserva || prenda.precio_total * 0.5;
 
   const handleCopyCode = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -31,43 +35,44 @@ export function PrendaCard({ prenda, whatsAppNumber }: PrendaCardProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const whatsappUrl = buildWhatsAppReservationLink(prenda, whatsAppNumber, selectedTalla);
-
-  const getWhatsAppForSize = (talla: string) => {
-    return buildWhatsAppReservationLink(prenda, whatsAppNumber, talla);
-  };
+  const whatsappUrl = buildWhatsAppReservationLink(prenda, whatsAppNumber);
 
   return (
-    <div className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-rose-200/70 shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
+    <div className="group flex flex-col bg-white rounded-xl overflow-hidden border border-[#F3D8DF] shadow-card hover:shadow-atelier hover:-translate-y-1 transition-all duration-300">
       {/* 1. Full-Bleed Editorial Image Container (Aspect 3:4) */}
-      <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FAF0F2]">
+      <div className="relative aspect-[3/4] w-full overflow-hidden bg-[#FBF1F3]">
         {prenda.url_foto && !imgError ? (
           <Image
             src={prenda.url_foto}
             alt={prenda.nombre}
             fill
-            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             className="object-cover object-center group-hover:scale-105 transition-transform duration-700 ease-out"
             onError={() => setImgError(true)}
             priority={false}
           />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center p-4 sm:p-6 text-center text-[#6B7280] bg-[#FAF0F2]">
-            <ImageOff className="w-8 h-8 sm:w-10 sm:h-10 stroke-[1.5] mb-2 text-[#F43F5E]/60" />
-            <span className="text-[10px] sm:text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
-              Foto no disponible
+          <div className="flex h-full w-full flex-col items-center justify-center p-6 text-center text-[#6B7280] bg-[#FBF1F3]">
+            <ImageOff className="w-10 h-10 stroke-[1.5] mb-2 text-[#E84364]/50" />
+            <span className="text-[11px] font-semibold text-[#6B7280] uppercase tracking-wider">
+              Lookbook no disponible
             </span>
           </div>
         )}
 
-        {/* Top Badge: Stock Inmediato */}
-        <div className="absolute top-2 left-2 sm:top-3 sm:left-3 z-10 flex flex-col gap-1">
-          <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider bg-[#FFF1F2] text-[#F43F5E] border border-rose-200/80 rounded-full shadow-2xs">
-            {prenda.estado === 'DISPONIBLE' ? 'En Stock' : prenda.estado}
+        {/* Top Badges */}
+        <div className="absolute top-3 left-3 z-10 flex flex-col gap-1.5">
+          <span className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest bg-white/95 backdrop-blur-sm text-[#1F2937] border border-[#F3D8DF] rounded-md shadow-2xs">
+            {prenda.categoria || 'Alta Costura'}
           </span>
+          {prenda.edicion_limitada && (
+            <span className="px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider bg-[#1F2937]/90 text-rose-200 rounded-md backdrop-blur-sm">
+              Edición {prenda.edicion_limitada} Pzas
+            </span>
+          )}
         </div>
 
-        {/* Wishlist Heart Icon (Top Right) */}
+        {/* Wishlist Heart Icon */}
         <button
           onClick={(e) => {
             e.preventDefault();
@@ -75,136 +80,125 @@ export function PrendaCard({ prenda, whatsAppNumber }: PrendaCardProps) {
             setIsLiked(!isLiked);
           }}
           type="button"
-          aria-label="Añadir a favoritos"
-          className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 p-1.5 sm:p-2 rounded-full bg-white/90 backdrop-blur-sm text-[#1F2937] hover:scale-110 active:scale-95 transition-all shadow-xs"
+          aria-label="Guardar en lista privada"
+          className="absolute top-3 right-3 z-10 p-2 rounded-full bg-white/90 backdrop-blur-sm text-[#1F2937] hover:scale-110 active:scale-95 transition-all shadow-xs"
         >
           <Heart
-            className={`w-3.5 h-3.5 sm:w-4 sm:h-4 transition-colors ${
-              isLiked ? 'fill-[#F43F5E] text-[#F43F5E]' : 'text-[#1F2937] stroke-[1.8]'
+            className={`w-3.5 h-3.5 transition-colors ${
+              isLiked ? 'fill-[#E84364] text-[#E84364]' : 'text-[#1F2937] stroke-[1.8]'
             }`}
           />
         </button>
+
+        {/* Stock Alert Pill if critical */}
+        {prenda.alerta_critica && (
+          <div className="absolute bottom-3 left-3 right-3 z-10">
+            <div className="py-1 px-2.5 rounded-md bg-[#1F2937]/85 backdrop-blur-md text-white text-[10px] font-semibold flex items-center justify-between">
+              <span className="flex items-center gap-1 text-rose-300">
+                <Sparkles className="w-3 h-3 text-[#E84364]" />
+                Últimas piezas en atelier
+              </span>
+              <span className="text-neutral-300">{prenda.stock_disponible || 2} disp.</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Product Meta & Details */}
-      <div className="p-2.5 sm:p-4 flex flex-col flex-1 justify-between bg-white border-t border-[#FCE7F3]/70">
+      <div className="p-4 sm:p-5 flex flex-col flex-1 justify-between bg-white">
         <div>
-          {/* Title & Price Header */}
-          <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 sm:gap-2 mb-1.5 sm:mb-2">
-            <h3 className="font-semibold text-xs sm:text-sm text-slate-800 line-clamp-1 sm:line-clamp-2 leading-tight sm:leading-snug" title={prenda.nombre}>
-              {prenda.nombre}
-            </h3>
-            <span className="font-bold text-sm sm:text-base text-slate-800 whitespace-nowrap">
-              {formatCurrency(prenda.precio_total)}
-            </span>
-          </div>
-
-          {/* Color Swatches & SKU Copy */}
-          <div className="flex items-center justify-between gap-1.5">
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#FCE7EA] border border-[#FCE7F3]" title="Rosa Blush" />
-              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#F7F3EE] border border-[#FCE7F3]" title="Marfil" />
-              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#1F2937] border border-[#1F2937]" title="Carbón" />
-              <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#EDF7EE] border border-[#FCE7F3]" title="Salvia" />
+          {/* Swatches & SKU */}
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-1.5">
+              {swatches.map((color, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setSelectedSwatch(idx)}
+                  className={`w-3.5 h-3.5 rounded-full border transition-all ${
+                    selectedSwatch === idx ? 'scale-125 ring-1 ring-[#E84364] ring-offset-1' : 'border-neutral-200'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={`Color variante ${idx + 1}`}
+                />
+              ))}
             </div>
 
-            {/* Quick SKU copy */}
             <button
               onClick={handleCopyCode}
               type="button"
-              className="text-[9px] sm:text-[10px] font-mono text-[#6B7280] hover:text-[#1F2937] flex items-center gap-1 uppercase tracking-wider transition-colors truncate max-w-[95px] sm:max-w-none"
+              className="text-[10px] font-mono text-[#6B7280] hover:text-[#1F2937] flex items-center gap-1 uppercase tracking-wider transition-colors"
               title="Copiar Código de Prenda"
             >
               {copied ? (
                 <span className="text-emerald-700 font-bold flex items-center gap-0.5">
-                  <Check className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-600" /> Copiado
+                  <Check className="w-3 h-3 text-emerald-600" /> Copiado
                 </span>
               ) : (
-                <span className="flex items-center gap-0.5 truncate">
-                  <Tag className="w-2.5 h-2.5 text-[#F43F5E] flex-shrink-0" />
-                  Ref. {prenda.codigo_shein}
+                <span className="flex items-center gap-1">
+                  <Tag className="w-2.5 h-2.5 text-[#E84364]" />
+                  {prenda.codigo_shein}
                 </span>
               )}
             </button>
           </div>
 
-          {/* Selector de Tallas Táctil con Stock */}
-          <div className="mt-2.5 pt-2 border-t border-rose-100/70 flex flex-col gap-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] sm:text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
-                Tallas:
+          {/* Title in Editorial Serif */}
+          <h3 className="font-serif font-bold text-sm sm:text-base text-[#1F2937] line-clamp-2 leading-snug min-h-[2.5rem]">
+            {prenda.nombre}
+          </h3>
+
+          {/* Price strip */}
+          <div className="mt-2 flex items-baseline justify-between border-b border-[#F3D8DF]/60 pb-2">
+            <div>
+              <span className="text-[10px] uppercase tracking-wider text-[#6B7280] block font-medium">Inversión</span>
+              <span className="text-base sm:text-lg font-bold text-[#1F2937]">
+                {formatCurrency(prenda.precio_total)}
               </span>
-              {prenda.stock_total !== undefined && prenda.stock_total > 0 && (
-                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full border border-rose-200/60">
-                  {prenda.stock_total} {prenda.stock_total === 1 ? 'disp.' : 'disp.'}
-                </span>
-              )}
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-wrap">
-              {parsedSizes.map((item, idx) => {
-                const isSelected = selectedTalla === item.size;
-                const isDisabled = !item.isAvailable;
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!isDisabled) setSelectedTalla(item.size);
-                    }}
-                    className={`min-h-[26px] sm:min-h-[28px] px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 flex items-center gap-1 border ${
-                      isDisabled
-                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through opacity-50'
-                        : isSelected
-                        ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow-2xs'
-                        : 'bg-white text-[#1F2937] border-rose-200/80 hover:bg-[#FFF1F2] hover:text-[#F43F5E]'
-                    }`}
-                    title={
-                      isDisabled
-                        ? `Talla ${item.size} agotada`
-                        : item.qty !== null
-                        ? `Talla ${item.size} (${item.qty} disponible${item.qty === 1 ? '' : 's'})`
-                        : `Seleccionar talla ${item.size}`
-                    }
-                  >
-                    <span>{item.size}</span>
-                    {item.qty !== null && (
-                      <span className={`text-[9px] font-medium ${isSelected ? 'text-rose-100' : 'text-rose-500'}`}>
-                        ({isDisabled ? 'Agotada' : `${item.qty} disp.`})
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+            <div className="text-right">
+              <span className="text-[10px] uppercase tracking-wider text-[#E84364] block font-semibold">Reserva Atelier</span>
+              <span className="text-xs sm:text-sm font-bold text-[#E84364] bg-[#FBF1F3] px-2 py-0.5 rounded">
+                {formatCurrency(reservaMonto)}
+              </span>
+            </div>
+          </div>
+
+          {/* Size Selector */}
+          <div className="mt-3">
+            <span className="text-[10px] uppercase tracking-wider text-[#6B7280] block font-semibold mb-1.5">
+              Talla Atelier:
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {sizesList.map((sz, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setSelectedTalla(sz)}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-all ${
+                    selectedTalla === sz
+                      ? 'bg-[#1F2937] text-white border-[#1F2937]'
+                      : 'bg-[#FFF8F8] text-[#1F2937] border-[#F3D8DF] hover:border-[#E84364]'
+                  }`}
+                >
+                  {sz}
+                </button>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* 3. Anticipo & Botón WhatsApp Ergonómico */}
-        <div className="mt-2.5 pt-2 border-t border-[#FCE7F3]/70 flex flex-col gap-2">
-          {/* Reservation pill */}
-          <div className="flex items-center justify-between text-[10px] sm:text-xs py-0.5 px-2 bg-rose-50 text-rose-600 rounded-md font-medium border border-rose-200/70">
-            <span className="flex items-center gap-1 font-semibold text-slate-700">
-              <ShieldCheck className="w-3 h-3 text-[#F43F5E] flex-shrink-0" />
-              Aparta con:
-            </span>
-            <span className="font-bold text-rose-600">
-              {formatCurrency(reservaMonto)}
-            </span>
-          </div>
-
-          {/* WhatsApp Button: Ancho completo, altura ergonómica h-10 sm:h-11 */}
+        {/* 3. Action Buttons */}
+        <div className="mt-5 pt-3 border-t border-[#F3D8DF]/60 flex flex-col gap-2">
+          {/* VIP WhatsApp Concierge Reservation */}
           <a
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full h-10 sm:h-11 inline-flex items-center justify-center gap-1.5 sm:gap-2 px-2 rounded-xl bg-[#4E9F76] hover:bg-[#3D8361] text-white font-bold text-[10.5px] sm:text-xs uppercase tracking-wide shadow-sm hover:shadow-md active:scale-95 transition-all duration-200"
-            title="Apartar por WhatsApp con Angélica Melgar"
+            className="w-full py-2.5 px-3 rounded-lg bg-[#E84364] hover:bg-[#D63353] active:scale-[0.98] text-white font-semibold text-xs uppercase tracking-wider shadow-sm hover:shadow-md transition-all flex items-center justify-center gap-2"
           >
-            <MessageCircle className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white flex-shrink-0" />
-            <span className="truncate">APARTAR POR WHATSAPP</span>
+            <MessageCircle className="w-4 h-4 text-white fill-white" />
+            <span>Apartar con Concierge VIP</span>
           </a>
         </div>
       </div>
