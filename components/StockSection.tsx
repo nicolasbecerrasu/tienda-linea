@@ -300,9 +300,16 @@ export function StockSection({
 
                     {/* Talla */}
                     <td className="py-2.5 px-3">
-                      <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-xs">
-                        {prenda.talla || 'Única'}
-                      </span>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md text-xs inline-block w-fit">
+                          {prenda.talla || 'Única'}
+                        </span>
+                        {prenda.stock_total !== undefined && prenda.stock_total > 0 && (
+                          <span className="text-[10px] text-rose-600 font-bold">
+                            {prenda.stock_total} {prenda.stock_total === 1 ? 'prenda' : 'prendas'}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Precio Total */}

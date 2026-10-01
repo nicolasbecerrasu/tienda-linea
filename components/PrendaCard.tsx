@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Image from 'next/image';
 import { Prenda } from '@/types/database';
-import { buildWhatsAppReservationLink, formatCurrency } from '@/lib/utils';
+import { buildWhatsAppReservationLink, formatCurrency, parsePrendaSizes } from '@/lib/utils';
 import { MessageCircle, Check, Tag, ShieldCheck, Heart, ImageOff } from 'lucide-react';
 
 interface PrendaCardProps {
@@ -16,8 +16,9 @@ export function PrendaCard({ prenda, whatsAppNumber }: PrendaCardProps) {
   const [imgError, setImgError] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
-  const sizes = prenda.talla ? prenda.talla.split(',').map((s) => s.trim()) : ['Única'];
-  const [selectedTalla, setSelectedTalla] = useState<string>(sizes[0] || 'Única');
+  const parsedSizes = useMemo(() => parsePrendaSizes(prenda), [prenda]);
+  const defaultSize = parsedSizes.find((s) => s.isAvailable)?.size || parsedSizes[0]?.size || 'Única';
+  const [selectedTalla, setSelectedTalla] = useState<string>(defaultSize);
 
   const reservaMonto = prenda.precio_reserva || 100;
   const saldoContraEntrega = Math.max(prenda.precio_total - reservaMonto, 0);
@@ -127,31 +128,53 @@ export function PrendaCard({ prenda, whatsAppNumber }: PrendaCardProps) {
             </button>
           </div>
 
-          {/* Selector de Tallas Táctil */}
-          <div className="mt-2.5 pt-2 border-t border-rose-100/70 flex items-center gap-1 overflow-x-auto no-scrollbar py-0.5">
-            <span className="text-[10px] sm:text-xs font-semibold text-[#6B7280] uppercase tracking-wider mr-1 flex-shrink-0">
-              Talla:
-            </span>
-            <div className="flex items-center gap-1">
-              {sizes.map((s, idx) => {
-                const isSelected = selectedTalla === s;
+          {/* Selector de Tallas Táctil con Stock */}
+          <div className="mt-2.5 pt-2 border-t border-rose-100/70 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] sm:text-xs font-semibold text-[#6B7280] uppercase tracking-wider">
+                Tallas:
+              </span>
+              {prenda.stock_total !== undefined && prenda.stock_total > 0 && (
+                <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full border border-rose-200/60">
+                  {prenda.stock_total} {prenda.stock_total === 1 ? 'disp.' : 'disp.'}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-wrap">
+              {parsedSizes.map((item, idx) => {
+                const isSelected = selectedTalla === item.size;
+                const isDisabled = !item.isAvailable;
                 return (
                   <button
                     key={idx}
                     type="button"
+                    disabled={isDisabled}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      setSelectedTalla(s);
+                      if (!isDisabled) setSelectedTalla(item.size);
                     }}
-                    className={`min-w-[24px] sm:min-w-[28px] h-6 sm:h-7 px-1.5 sm:px-2 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 active:scale-95 flex items-center justify-center border ${
-                      isSelected
+                    className={`min-h-[26px] sm:min-h-[28px] px-2 py-0.5 rounded-lg text-[10px] sm:text-xs font-bold uppercase transition-all duration-200 flex items-center gap-1 border ${
+                      isDisabled
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed line-through opacity-50'
+                        : isSelected
                         ? 'bg-[#F43F5E] text-white border-[#F43F5E] shadow-2xs'
                         : 'bg-white text-[#1F2937] border-rose-200/80 hover:bg-[#FFF1F2] hover:text-[#F43F5E]'
                     }`}
-                    title={`Seleccionar talla ${s}`}
+                    title={
+                      isDisabled
+                        ? `Talla ${item.size} agotada`
+                        : item.qty !== null
+                        ? `Talla ${item.size} (${item.qty} disponible${item.qty === 1 ? '' : 's'})`
+                        : `Seleccionar talla ${item.size}`
+                    }
                   >
-                    {s}
+                    <span>{item.size}</span>
+                    {item.qty !== null && (
+                      <span className={`text-[9px] font-medium ${isSelected ? 'text-rose-100' : 'text-rose-500'}`}>
+                        ({isDisabled ? 'Agotada' : `${item.qty} disp.`})
+                      </span>
+                    )}
                   </button>
                 );
               })}

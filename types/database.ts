@@ -10,6 +10,8 @@ export interface Prenda {
   url_foto: string | null;
   storage_path: string | null;
   estado: PrendaEstado;
+  stock_total?: number;
+  desglose_tallas?: Record<string, number> | null;
   created_at: string;
 }
 

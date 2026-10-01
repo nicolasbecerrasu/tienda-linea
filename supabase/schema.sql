@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS public.prendas (
     url_foto TEXT,
     storage_path TEXT,
     estado TEXT NOT NULL DEFAULT 'DISPONIBLE' CHECK (estado IN ('DISPONIBLE', 'APARTADO', 'AGOTADO', 'LIQUIDADO')),
+    stock_total INTEGER NOT NULL DEFAULT 1 CHECK (stock_total >= 0),
+    desglose_tallas JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 

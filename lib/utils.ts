@@ -111,6 +111,58 @@ export function buildWhatsAppReservationLink(
   return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(rawMessage)}`;
 }
 
+export interface SizeAvailability {
+  size: string;
+  qty: number | null;
+  isAvailable: boolean;
+}
+
+export function parsePrendaSizes(prenda: Prenda): SizeAvailability[] {
+  // 1. Si existe desglose_tallas en formato objeto
+  if (prenda.desglose_tallas && typeof prenda.desglose_tallas === 'object') {
+    const entries = Object.entries(prenda.desglose_tallas);
+    if (entries.length > 0) {
+      return entries.map(([size, qty]) => {
+        const numericQty = Number(qty) || 0;
+        return {
+          size: size.trim(),
+          qty: numericQty,
+          isAvailable: numericQty > 0,
+        };
+      });
+    }
+  }
+
+  // 2. Si sólo tenemos la cadena talla (ej. "S (3), M (2)" o "S, M, L")
+  if (!prenda.talla || !prenda.talla.trim()) {
+    return [{ size: 'Única', qty: null, isAvailable: true }];
+  }
+
+  const parts = prenda.talla.split(',').map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 0) {
+    return [{ size: 'Única', qty: null, isAvailable: true }];
+  }
+
+  return parts.map((part) => {
+    // Buscar patrón como "S (3)" o "S (3 disp.)" o "S (3 disp)"
+    const match = part.match(/^(.+?)\s*\(\s*(\d+)(?:\s*disp\.?)?\s*\)$/i);
+    if (match) {
+      const size = match[1].trim();
+      const qty = parseInt(match[2], 10);
+      return {
+        size,
+        qty,
+        isAvailable: qty > 0,
+      };
+    }
+    // Formato simple sin número explícito: "S"
+    return {
+      size: part,
+      qty: null,
+      isAvailable: true,
+    };
+  });
+}
 
 export function exportPedidosToCSV(pedidos: Pedido[], filename = 'pedidos_so_boutique.csv'): void {
   if (!pedidos || pedidos.length === 0) {
